@@ -315,7 +315,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split('?', 1)[0]
         try:
-            if path == '/healthz': return self.send_json(health())
+            if path in ('/healthz', '/api/health'): return self.send_json(health())
             if path == '/api/config': return self.send_json(get_config())
             if path == '/api/state':
                 user = current_user(self.headers)
