@@ -10,11 +10,14 @@ function waterPoint(distance) {
 }
 let L = {}, R = [], BL = [], B = {}, F = [];
 let M = 0, Q = {}, INV = [], tutDone = true, tut = -1;
-let boatOwned = false, boatPrice = 6000, minCatchSeconds = 12, castPending = false;
+let boatOwned = false, boatPrice = 10000, minCatchSeconds = 12, castPending = false;
+const rub = n => n.toLocaleString('ru-RU');   // «10 000» — все суммы в интерфейсе через этот хелпер
 // состояния: idle, charge, fly, wait, bite, reel, res (карточка), out (забрать/отпустить)
 let S = 'idle', pw = 0, hold = 0, tm = 0, bx = 0, fish = null, w = 0, t = 0, d = 1;
 let cast = 0, sd = 0, sg = 2, tt = 0, last = 0, outT = 0, outKeep = false, outMsg = '';
 const rnd = (a, b) => a + Math.random() * (b - a);
+// Награда зависит от веса: 0.75× базовой цены при min, 1.75× при max — та же формула, что и на сервере.
+const priceFor = (f, w) => Math.round(f.price * (f.max > f.min ? .75 + (Math.min(Math.max(w, f.min), f.max) - f.min) / (f.max - f.min) : 1));
 const say = s => $('msg').textContent = s;
 const lock = v => { sl.disabled = sr.disabled = sb.disabled = v; $('blocations').disabled = v; };
 const post = (u, o) => fetch(u, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(o)}).then(r => r.json());
@@ -94,7 +97,7 @@ function down() {
   if ($('fishing-view').hidden) return;
   if ($('auth') && !$('auth').hidden) return;   // пока не выполнен вход — не рыбачим
   if (S === 'idle') {
-    if (sl.value === 'sea' && !boatOwned) { say('Сначала приобретите лодку за 6 000 ₽ в магазине.'); return; }
+    if (sl.value === 'sea' && !boatOwned) { say(`Сначала приобретите лодку за ${rub(boatPrice)} ₽ в магазине.`); return; }
     if (!(Q[sb.value] > 0)) { say('Наживка закончилась — купите в магазине или выберите другую.'); return; }
     S = 'charge'; pw = 0; say('');
   } else if (S === 'wait') { S = 'idle'; fish = null; lock(false); say('Вы смотали удочку.'); }
@@ -111,6 +114,7 @@ function up() {
     castPending = true;
     post('/api/cast', {bait: sb.value, location: sl.value}).then(async r => {
       if (!r.ok) end(r.error || 'Не удалось забросить удочку.');
+      else if (r.bait_kept) toast('Блесна не потратилась', 'Заброс обошёлся бесплатно: наживка осталась в запасе.');
       await refresh();
     }).catch(() => end('Нет связи с сервером. Повторите заброс.')).finally(() => { castPending = false; });
     if (tut >= 1 && tut <= 3) setTut(2);
@@ -159,7 +163,7 @@ function update(dt) {
     else if (d >= 1.08) end('Рыба ушла в глубину.', 1);
     else if (d <= 0) {
       S = 'res'; hold = 0;
-      $('cn').textContent = fish.name; $('cw').textContent = w.toFixed(2) + ' кг'; $('cp').textContent = 'Стоимость: ' + fish.price + ' ₽';
+      $('cn').textContent = fish.name; $('cw').textContent = w.toFixed(2) + ' кг'; $('cp').textContent = 'Стоимость: ' + priceFor(fish, w) + ' ₽';
       $('card').style.display = 'flex'; label(); if (tut === 3) setTut(4);
     }
   } else if (S === 'out') {
@@ -171,7 +175,7 @@ async function finish(keep) {
   $('card').firstElementChild.classList.remove('hl');
   $('card').style.display = 'none';
   S = 'out'; outT = 0; outKeep = keep; label();
-  outMsg = keep ? `Рыба в инвентаре, +${fish.price} ₽.` : 'Рыба отпущена.';
+  outMsg = keep ? `Рыба в инвентаре, +${priceFor(fish, w)} ₽.` : 'Рыба отпущена.';
   try {
     const result = await post('/api/catch', {fish_id: fish.id, location: sl.value, weight: w, kept: keep});
     if (!result.ok) { outMsg = result.error || 'Улов не сохранён.'; say(outMsg); }
@@ -208,7 +212,7 @@ function renderShop() {
     const fl = F.filter(f => f.baits[b.code]).map(f => f.name).join(', ');
     return `<tr><td><b>${b.name}</b> — ${b.price} ₽<div class="fl">Ловится: ${fl}</div></td><td>в запасе: ${Q[b.code] || 0}</td>
       <td><button data-b="${b.code}" data-n="1">+1</button> <button data-b="${b.code}" data-n="10">+10</button></td></tr>`;
-  }).join('') + `</table><section class="boat-product"><div><h3>Лодка</h3><p>Откройте морскую рыбалку навсегда. Четыре новых вида рыб, открытая вода и ловля с лодки.</p><p class="boat-progress">${boatOwned ? 'Лодка приобретена · море открыто' : `Накоплено ${M.toLocaleString('ru-RU')} из 6 000 ₽`}</p></div><button data-boat ${boatOwned ? 'disabled' : ''}>${boatOwned ? 'Уже куплена' : 'Купить лодку · 6 000 ₽'}</button></section>`;
+  }).join('') + `</table><section class="boat-product"><div><h3>Лодка</h3><p>Откройте морскую рыбалку навсегда. Четыре новых вида рыб, открытая вода и ловля с лодки.</p><p class="boat-progress">${boatOwned ? 'Лодка приобретена · море открыто' : `Накоплено ${M.toLocaleString('ru-RU')} из ${rub(boatPrice)} ₽`}</p></div><button data-boat ${boatOwned ? 'disabled' : ''}>${boatOwned ? 'Уже куплена' : `Купить лодку · ${rub(boatPrice)} ₽`}</button></section>`;
 }
 $('shopbody').onclick = async e => {
   if (e.target.closest('[data-boat]')) {
@@ -224,7 +228,7 @@ $('shopbody').onclick = async e => {
 };
 $('bshop').onclick = () => { $('shopmsg').textContent = ''; renderShop(); modal('shop', 1); };
 function renderInv() {
-  $('invbody').innerHTML = `<h3>Лодка</h3><p>${boatOwned ? 'В собственности · морская рыбалка открыта навсегда' : 'Не приобретена · 6 000 ₽ в магазине'}</p><h3>Удочки</h3><table>` + R.map((r, i) =>
+  $('invbody').innerHTML = `<h3>Лодка</h3><p>${boatOwned ? 'В собственности · морская рыбалка открыта навсегда' : `Не приобретена · ${rub(boatPrice)} ₽ в магазине`}</p><h3>Удочки</h3><table>` + R.map((r, i) =>
     `<tr><td>${r.name}</td><td class="fl">дальность ${r.rng}, прочность ×${r.str}, скорость ×${r.spd}</td>
      <td>${+sr.value === i ? 'выбрана' : `<button data-r="${i}" ${sr.disabled ? 'disabled' : ''}>Выбрать</button>`}</td></tr>`).join('') +
     '</table><h3>Наживка</h3><table>' + BL.map(b =>

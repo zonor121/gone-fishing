@@ -1,10 +1,11 @@
 """Сервер игры «Рыбалка»: только стандартная библиотека Python 3.8+.
 Запуск: python server.py  ->  http://localhost:8000"""
-import json, os, sqlite3, sys, time
+import json, os, random, sqlite3, sys, time
 from contextlib import closing
 from sea import migrate as migrate_sea, BOAT_PRICE, MIN_CATCH_SECONDS
 import auth
 import world
+from world import SPIN_BAIT_SPEND_CHANCE
 import supabase_db
 supabase_db.load_env(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 DB_BACKEND = os.environ.get('DB_BACKEND', 'supabase').lower()
@@ -111,6 +112,11 @@ def _get_state(c, uid):
             'quests': quests, 'achievements': achievements, 'diary': diary}
 
 # ---------- запись: каждая функция возвращает (http_code, json) ----------
+def weighted_price(fish, w):
+    """Награда зависит от веса: 0.75× базовой цены при min_kg, 1.75× при max_kg (линейно)."""
+    lo, hi = fish['min_kg'], fish['max_kg']
+    mult = (0.75 + (min(max(w, lo), hi) - lo) / (hi - lo)) if hi > lo else 1.0
+    return int(fish['price'] * mult + 0.5)
 # Все игровые действия привязаны к uid из cookie-сессии.
 def post_cast(d, uid):                     # заброс: -1 наживка
     with closing(conn()) as c:
@@ -120,18 +126,24 @@ def post_cast(d, uid):                     # заброс: -1 наживка
             return 400, {'ok': False, 'error': 'Неизвестная локация.'}
         owned = c.execute('SELECT boat_owned FROM player WHERE user_id=?', (uid,)).fetchone()[0]
         if loc['code'] == 'sea' and not owned:
-            return 403, {'ok': False, 'error': 'Для морской рыбалки необходимо приобрести лодку за 6 000 ₽.'}
-        bait = c.execute('SELECT id FROM bait WHERE code=?', (d.get('bait'),)).fetchone()
+            return 403, {'ok': False, 'error': f'Для морской рыбалки необходимо приобрести лодку за {BOAT_PRICE:,} ₽.'.replace(',', ' ')}
+        bait = c.execute('SELECT id,code FROM bait WHERE code=?', (d.get('bait'),)).fetchone()
         if not bait:
             return 400, {'ok': False, 'error': 'Неизвестная наживка'}
-        cur = c.execute('UPDATE player_bait SET qty=qty-1 WHERE user_id=? AND qty>0 AND bait_id=?',
-                        (uid, bait['id']))
-        if cur.rowcount != 1:
+        row = c.execute('SELECT qty FROM player_bait WHERE user_id=? AND bait_id=?', (uid, bait['id'])).fetchone()
+        if not row or row['qty'] < 1:
             return 400, {'ok': False, 'error': 'Наживка закончилась'}
+        # блесна расходуется не с каждого заброса: шанс потратить SPIN_BAIT_SPEND_CHANCE
+        bait_kept = bait['code'] == 'spin' and random.random() >= SPIN_BAIT_SPEND_CHANCE
+        if not bait_kept:
+            cur = c.execute('UPDATE player_bait SET qty=qty-1 WHERE user_id=? AND bait_id=? AND qty>0',
+                            (uid, bait['id']))
+            if cur.rowcount != 1:
+                return 400, {'ok': False, 'error': 'Наживка закончилась'}
         c.execute('INSERT OR REPLACE INTO active_cast(user_id,location_id,bait_id,ready_at) VALUES (?,?,?,?)',
                   (uid, loc['id'], bait['id'], time.time() + MIN_CATCH_SECONDS))
         c.commit()
-    return 200, {'ok': True}
+    return 200, {'ok': True, 'bait_kept': bool(bait_kept)}
 
 def post_buy(d, uid):
     n = int(d.get('qty', 1))
@@ -142,7 +154,7 @@ def post_buy(d, uid):
             if p['boat_owned']:
                 return 409, {'ok': False, 'error': 'Лодка уже приобретена'}
             if p['money'] < BOAT_PRICE:
-                return 400, {'ok': False, 'error': 'Не хватает денег: лодка стоит 6 000 ₽.'}
+                return 400, {'ok': False, 'error': f'Не хватает денег: лодка стоит {BOAT_PRICE:,} ₽.'.replace(',', ' ')}
             c.execute('UPDATE player SET money=money-?,boat_owned=1 WHERE user_id=?', (BOAT_PRICE, uid))
             c.commit()
             return 200, {'ok': True}
@@ -174,7 +186,7 @@ def post_catch(d, uid):                    # «Забрать» -> деньги,
         if not f or not l or not (f['min_kg'] - 0.01 <= w <= f['max_kg'] + 0.01):
             return 400, {'ok': False, 'error': 'Недопустимый вес улова.'}
         kept = 1 if d.get('kept') else 0
-        price = f['price'] if kept else 0
+        price = weighted_price(f, w) if kept else 0
         c.execute('INSERT INTO catch(user_id,fish_id,location_id,weight_kg,kept,price,bait_id) VALUES (?,?,?,?,?,?,?)',
                   (uid, d['fish_id'], l['id'], round(w, 2), kept, price, active['bait_id']))
         c.execute('DELETE FROM active_cast WHERE user_id=?', (uid,))

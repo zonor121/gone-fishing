@@ -6,6 +6,7 @@ import sys
 import tempfile
 import threading
 import unittest
+import unittest.mock
 from contextlib import closing
 from http.server import ThreadingHTTPServer
 
@@ -182,6 +183,105 @@ class LegacySaveTests(unittest.TestCase):
                 self.assertEqual(len(server.get_config()['fish']), 12)  # 6 прежних + море + налим/форель
             finally:
                 server.DB = original
+
+
+class WeightedPriceTests(unittest.TestCase):
+    """Награда зависит от веса: 0.75× базовой цены при min_kg и 1.75× при max_kg (линейно)."""
+
+    def test_interpolation_and_clamp(self):
+        pike = {'min_kg': 1, 'max_kg': 9, 'price': 300}   # щука из seed.sql
+        for w, expected in [(1.0, 225), (5.0, 375), (9.0, 525),   # края и середина
+                            (0.5, 225), (9.9, 525),               # вне диапазона -> clamp
+                            (2.2, 270), (4.95, 373)]:             # промежуточные + округление
+            self.assertEqual(server.weighted_price(pike, w), expected, f'вес {w}')
+
+    def test_degenerate_span_uses_base_price(self):
+        self.assertEqual(server.weighted_price({'min_kg': 2, 'max_kg': 2, 'price': 100}, 2.0), 100)
+
+
+class CatchPriceTests(HttpTests):
+    """Полный цикл cast+catch: сервер начисляет цену по весу присланного улова."""
+
+    def catch_for_weight(self, weight):
+        cookie = self.login_cookie()
+        status, data = self.post('/api/cast',
+            json.dumps({'location': 'lake', 'bait': 'worm'}).encode(), cookie)
+        self.assertEqual(status, 200, data)
+        with closing(server.conn()) as c:            # поклёвка готова мгновенно
+            c.execute('UPDATE active_cast SET ready_at=0')
+            c.commit()
+        status, data = self.post('/api/catch',
+            json.dumps({'fish_id': 1, 'location': 'lake', 'weight': weight, 'kept': True}).encode(), cookie)
+        self.assertEqual(status, 200, data)
+        return json.loads(data)
+
+    def test_min_weight_pays_75_percent(self):
+        self.assertEqual(self.catch_for_weight(0.3)['price'], 75)    # карась 100 ₽, min 0.3 кг
+
+    def test_midpoint_weight_pays_125_percent(self):
+        self.assertEqual(self.catch_for_weight(0.75)['price'], 125)  # середина диапазона
+
+    def test_max_weight_pays_175_percent(self):
+        self.assertEqual(self.catch_for_weight(1.2)['price'], 175)   # карась 100 ₽, max 1.2 кг
+
+
+class SpinBaitTests(unittest.TestCase):
+    """Блесна расходуется только в 25% забросов (SPIN_BAIT_SPEND_CHANCE), прочие наживки — всегда."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.original = server.DB
+        server.DB = os.path.join(self.tmp.name, 'spin.db')
+        server.init_db()
+        with closing(server.conn()) as c:
+            self.uid, _ = auth.register(c, 'spinner', 'secret1')
+            c.commit()
+
+    def tearDown(self):
+        server.DB = self.original
+        self.tmp.cleanup()
+
+    def buy_spin(self):
+        self.assertEqual(server.post_buy({'bait': 'spin', 'qty': 1}, self.uid)[0], 200)
+
+    def cast(self, bait, rnd):
+        with unittest.mock.patch.object(server.random, 'random', return_value=rnd):
+            return server.post_cast({'location': 'lake', 'bait': bait}, self.uid)
+
+    def qty(self, bait_code):
+        with closing(server.conn()) as c:
+            bid = c.execute('SELECT id FROM bait WHERE code=?', (bait_code,)).fetchone()['id']
+            return c.execute('SELECT qty FROM player_bait WHERE user_id=? AND bait_id=?',
+                             (self.uid, bid)).fetchone()['qty']
+
+    def test_spin_survives_75_percent(self):
+        self.buy_spin()
+        status, body = self.cast('spin', 0.5)          # 0.5 >= 0.25 -> блесна осталась
+        self.assertEqual(status, 200)
+        self.assertTrue(body['bait_kept'])
+        self.assertEqual(self.qty('spin'), 1)
+
+    def test_spin_spent_in_25_percent(self):
+        self.buy_spin()
+        status, body = self.cast('spin', 0.1)          # 0.1 < 0.25 -> блесна потрачена
+        self.assertEqual(status, 200)
+        self.assertFalse(body['bait_kept'])
+        self.assertEqual(self.qty('spin'), 0)
+
+    def test_worm_always_spent_regardless_of_chance(self):
+        status, body = self.cast('worm', 0.9)          # даже «удачный» бросок не спасает червя
+        self.assertEqual(status, 200)
+        self.assertFalse(body['bait_kept'])
+        self.assertEqual(self.qty('worm'), 9)          # стартовые 10 штук
+
+    def test_spin_requires_bait_in_stock(self):
+        self.buy_spin()
+        self.assertEqual(self.cast('spin', 0.9)[0], 200)   # с остатком заброс возможен
+        with closing(server.conn()) as c:                  # обнулили остаток
+            bid = c.execute('SELECT id FROM bait WHERE code=?', ('spin',)).fetchone()['id']
+            c.execute('UPDATE player_bait SET qty=0 WHERE user_id=? AND bait_id=?', (self.uid, bid))
+            c.commit()
+        self.assertEqual(self.cast('spin', 0.9)[0], 400)   # 75% «сохранение» не отменяет проверку
 
 
 if __name__ == '__main__':

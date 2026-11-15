@@ -8,7 +8,7 @@ DECLARE
  d jsonb := coalesce(payload->'data','{}');
  p player%ROWTYPE; a active_cast%ROWTYPE; f fish%ROWTYPE; b bait%ROWTYPE;
  l location%ROWTYPE; q quest%ROWTYPE; r record;
- n integer; w numeric; price_value integer; kept_value integer;
+ n integer; w numeric; price_value integer; kept_value integer; bait_kept boolean;
  now_value double precision := extract(epoch from clock_timestamp());
  today text := to_char(current_timestamp AT TIME ZONE 'UTC','YYYY-MM-DD');
  weather_value text; until_value double precision; codes jsonb := '[]';
@@ -42,7 +42,7 @@ BEGIN
      'times',string_to_array(times,','),'weather',string_to_array(weather,','),
      'locs',(SELECT jsonb_agg(l.code ORDER BY l.id) FROM fish_location fl JOIN location l ON l.id=fl.location_id WHERE fl.fish_id=x.id),
      'baits',(SELECT jsonb_object_agg(b.code,fb.bite_weight) FROM fish_bait fb JOIN bait b ON b.id=fb.bait_id WHERE fb.fish_id=x.id)) ORDER BY x.price) FROM fish x),
-   'boat_price',6000,'min_catch_seconds',12,
+   'boat_price',10000,'min_catch_seconds',12,
    'world','{"day_parts":[{"code":"morning","name":"Утро"},{"code":"day","name":"День"},{"code":"evening","name":"Вечер"},{"code":"night","name":"Ночь"}],"day_part_seconds":180,"weathers":[{"code":"clear","name":"Ясно"},{"code":"rain","name":"Дождь"},{"code":"fog","name":"Туман"},{"code":"wind","name":"Ветер"}]}'::jsonb);
  END IF;
  -- Every per-player operation takes the same lock, including state/quest generation.
@@ -83,18 +83,21 @@ BEGIN
  ELSIF action='cast' THEN
   SELECT * INTO l FROM location WHERE code=d->>'location';
   IF NOT FOUND THEN RAISE EXCEPTION 'Неизвестная локация.' USING ERRCODE='P0001'; END IF;
-  IF l.code='sea' AND p.boat_owned=0 THEN RETURN '{"status":403,"body":{"ok":false,"error":"Для морской рыбалки необходимо приобрести лодку за 6 000 ₽."}}'; END IF;
+  IF l.code='sea' AND p.boat_owned=0 THEN RETURN '{"status":403,"body":{"ok":false,"error":"Для морской рыбалки необходимо приобрести лодку за 10 000 ₽."}}'; END IF;
   SELECT * INTO b FROM bait WHERE code=d->>'bait';
   IF NOT FOUND THEN RAISE EXCEPTION 'Неизвестная наживка' USING ERRCODE='P0001'; END IF;
-  UPDATE player_bait SET qty=qty-1 WHERE user_id=u AND bait_id=b.id AND qty>0;
-  IF NOT FOUND THEN RAISE EXCEPTION 'Наживка закончилась' USING ERRCODE='P0001'; END IF;
+  IF NOT EXISTS(SELECT 1 FROM player_bait WHERE user_id=u AND bait_id=b.id AND qty>0) THEN RAISE EXCEPTION 'Наживка закончилась' USING ERRCODE='P0001'; END IF;
+  -- блесна расходуется не с каждого заброса: 25% шанс потратить, иначе остаётся в запасе
+  bait_kept:=b.code='spin' AND random()>=.25;
+  IF NOT bait_kept THEN UPDATE player_bait SET qty=qty-1 WHERE user_id=u AND bait_id=b.id AND qty>0; END IF;
   INSERT INTO active_cast VALUES(u,l.id,b.id,now_value+12) ON CONFLICT(user_id) DO UPDATE SET location_id=excluded.location_id,bait_id=excluded.bait_id,ready_at=excluded.ready_at;
+  RETURN jsonb_build_object('status',200,'body',jsonb_build_object('ok',true,'bait_kept',bait_kept));
  ELSIF action='buy' THEN
   n:=coalesce((d->>'qty')::integer,1);
   IF d->>'item'='boat' THEN
    IF p.boat_owned=1 THEN RETURN '{"status":409,"body":{"ok":false,"error":"Лодка уже приобретена"}}'; END IF;
-   IF p.money<6000 THEN RAISE EXCEPTION 'Не хватает денег: лодка стоит 6 000 ₽.' USING ERRCODE='P0001'; END IF;
-   UPDATE player SET money=money-6000,boat_owned=1 WHERE user_id=u;
+   IF p.money<10000 THEN RAISE EXCEPTION 'Не хватает денег: лодка стоит 10 000 ₽.' USING ERRCODE='P0001'; END IF;
+   UPDATE player SET money=money-10000,boat_owned=1 WHERE user_id=u;
   ELSE
    SELECT * INTO b FROM bait WHERE code=d->>'bait';
    IF b.id IS NULL OR n NOT BETWEEN 1 AND 99 OR p.money<b.price::bigint*n THEN RAISE EXCEPTION 'Не хватает денег' USING ERRCODE='P0001'; END IF;
@@ -112,7 +115,9 @@ BEGIN
   w:=(d->>'weight')::numeric;
   IF w IS NULL OR NOT(w BETWEEN f.min_kg-.01 AND f.max_kg+.01) THEN RAISE EXCEPTION 'Недопустимый вес улова.' USING ERRCODE='P0001'; END IF;
   kept_value:=CASE WHEN coalesce((d->>'kept')::boolean,false) THEN 1 ELSE 0 END;
-  price_value:=CASE WHEN kept_value=1 THEN f.price ELSE 0 END;
+  -- награда зависит от веса: 0.75× базовой цены при min_kg, 1.75× при max_kg (линейно, округление вверх)
+  price_value:=CASE WHEN kept_value=1 THEN
+   floor(f.price*(CASE WHEN f.max_kg>f.min_kg THEN .75+(least(greatest(w,f.min_kg),f.max_kg)-f.min_kg)/(f.max_kg-f.min_kg) ELSE 1.0 END)+.5)::integer ELSE 0 END;
   INSERT INTO catch(user_id,fish_id,location_id,weight_kg,kept,price,bait_id) VALUES(u,f.id,l.id,round(w,2),kept_value,price_value,a.bait_id);
   DELETE FROM active_cast WHERE user_id=u;
   UPDATE player SET money=money+price_value WHERE user_id=u;

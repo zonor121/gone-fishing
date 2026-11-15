@@ -187,7 +187,7 @@ class AuthApiTests(unittest.TestCase):
             self.assertEqual(server.post_catch({'location': 'lake', 'fish_id': 1, 'weight': 1, 'kept': True}, uid_a)[0], 200)
 
         st_a, st_b = server.get_state(uid_a), server.get_state(uid_b)
-        self.assertEqual(st_a['money'], 300)                  # 200 + карась
+        self.assertEqual(st_a['money'], 353)                  # 200 + карась 1 кг: 100×1.528 ≈ 153
         self.assertEqual(st_b['money'], 200)                  # Боба улов не коснулся
         self.assertEqual(st_a['baits']['worm'], 9)
         self.assertEqual(st_b['baits']['worm'], 10)

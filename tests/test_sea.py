@@ -55,14 +55,15 @@ class SeaTests(unittest.TestCase):
     def test_purchase_insufficient_persistent_and_not_repeated(self):
         self.assertEqual(server.post_buy({'item':'boat'}, self.uid)[0],400)
         self.assertEqual(server.get_state(self.uid)['money'],200)
-        self.sql('UPDATE player SET money=6500 WHERE user_id=?', (self.uid,))
+        self.sql('UPDATE player SET money=11000 WHERE user_id=?', (self.uid,))
         self.assertEqual(server.post_buy({'item':'boat'}, self.uid)[0],200)
-        self.assertEqual(server.get_state(self.uid)['money'],500)
+        self.assertEqual(server.get_state(self.uid)['money'],1000)
         self.assertTrue(server.get_state(self.uid)['boat_owned'])
         server.init_db()
         self.assertTrue(server.get_state(self.uid)['boat_owned'])
         self.assertEqual(server.post_buy({'item':'boat'}, self.uid)[0],409)
-        self.assertEqual(server.get_state(self.uid)['money'],500)
+        self.assertEqual(server.get_state(self.uid)['money'],1000)
+        self.assertEqual(server.get_config()['boat_price'],10000)
 
     def test_sea_locked_and_species_exclusive(self):
         self.assertEqual(server.post_cast({'location':'sea','bait':'worm'}, self.uid)[0],403)
@@ -89,14 +90,17 @@ class SeaTests(unittest.TestCase):
             self.assertEqual(server.post_catch(dict(catch,weight=90), self.uid)[0],400)
             self.assertEqual(server.post_catch(catch, self.uid)[0],200)
             self.assertEqual(server.post_catch(catch, self.uid)[0],400)
-        self.assertEqual(server.get_state(self.uid)['money'],760)
+        self.assertEqual(server.get_state(self.uid)['money'],790)  # 600-80 наживка + скумбрия 1 кг: 240×1.125
         self.assertEqual(server.get_state(self.uid)['baits']['shrimp'],0)
 
     def test_three_minute_economy_upper_bound(self):
         config=server.get_config()
         highest=max(f['price'] for f in config['fish'] if 'sea' not in f['locs'])
         # Conservative bound: no bait costs, instant reeling, maximum fish every cast.
-        self.assertLess(200+(180//config['min_catch_seconds'])*highest, config['boat_price'])
+        # Весовая экономика подняла потолок (README: 9 395 ₽ за 3 минуты); лодка за 10 000 ₽
+        # возвращает исходный инвариант: идеальный трёхминутный гринд не покрывает её цену.
+        ceiling=200+(180//config['min_catch_seconds'])*int(highest*1.75+.5)
+        self.assertLess(ceiling, config['boat_price'])
         self.sql('UPDATE player_bait SET qty=99 WHERE user_id=? AND bait_id=1', (self.uid,))
         with patch('server.time.time',return_value=0):
             server.post_cast({'location':'lake','bait':'worm'}, self.uid)

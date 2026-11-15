@@ -124,7 +124,7 @@ function initWorld() {
     await refresh(); if (currentViewName() !== 'fishing') renderQuests();
   };
   // Погода и задания живут на сервере: подтягиваем их в фоне, пока игрок на рыбалке.
-  setInterval(() => { if (S === 'idle' && !document.hidden && $('fishing-view') && !$('fishing-view').hidden) refresh(); }, 30000);
+  setInterval(() => { if (S === 'idle' && !document.hidden && $('fishing-view') && !$('fishing-view').hidden) refresh().catch(() => {}); }, 30000);
 }
 function currentViewName() {
   return Object.keys(VIEW_IDS).find(k => !$(VIEW_IDS[k]).hidden) || 'fishing';
