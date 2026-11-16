@@ -164,6 +164,7 @@ function update(dt) {
     else if (d <= 0) {
       S = 'res'; hold = 0;
       $('cn').textContent = fish.name; $('cw').textContent = w.toFixed(2) + ' кг'; $('cp').textContent = 'Стоимость: ' + priceFor(fish, w) + ' ₽';
+      cardFish();
       $('card').style.display = 'flex'; label(); if (tut === 3) setTut(4);
     }
   } else if (S === 'out') {
@@ -266,20 +267,26 @@ function bar(x, y, wd, v, lab, col, dz) {
   g.strokeStyle = '#fff'; g.lineWidth = 1; g.strokeRect(x, y, wd, 16);
   g.fillStyle = '#fff'; g.font = '12px sans-serif'; g.fillText(lab, x, y - 4);
 }
-function drawFish(px, py) {
+function drawFish(px, py, gc = g) {
   const rx = 8 + Math.min(20, w * 3 + 6), ry = 6 + Math.min(10, w * 1.2);
-  g.save(); g.translate(px, py);
-  const sheen = g.createLinearGradient(0, -ry, 0, ry);
+  gc.save(); gc.translate(px, py);
+  const sheen = gc.createLinearGradient(0, -ry, 0, ry);
   sheen.addColorStop(0, '#425c49'); sheen.addColorStop(.4, fish.color); sheen.addColorStop(1, '#dfd8b4');
-  shape(g, [[rx-2,0],[rx+13,-ry*.85],[rx+10,0],[rx+13,ry*.85]], fish.color);
-  shape(g, [[-rx*.3,-ry+2],[rx*.2,-ry-6],[rx*.5,-ry+3]], '#687653');
-  g.fillStyle = sheen; g.beginPath(); g.ellipse(0,0,rx,ry,0,0,7); g.fill();
-  g.strokeStyle = 'rgba(42,61,44,.3)'; g.lineWidth = .7;
-  for(let x=-rx+8;x<rx-2;x+=5) for(let y=-ry+4;y<ry-2;y+=5){g.beginPath();g.arc(x,y,2,-1,1);g.stroke();}
-  g.beginPath();g.ellipse(-rx*.55,0,3,ry*.75,0,-1.5,1.5);g.stroke();
-  shape(g, [[-3,2],[6,ry+3],[8,3]], '#8d986f');
-  g.fillStyle = '#e7e1c3'; g.beginPath();g.arc(-rx+5,-2,2.5,0,7);g.fill();
-  g.fillStyle = '#182d28'; g.beginPath();g.arc(-rx+5,-2,1.4,0,7);g.fill();g.restore();
+  shape(gc, [[rx-2,0],[rx+13,-ry*.85],[rx+10,0],[rx+13,ry*.85]], fish.color);
+  shape(gc, [[-rx*.3,-ry+2],[rx*.2,-ry-6],[rx*.5,-ry+3]], '#687653');
+  gc.fillStyle = sheen; gc.beginPath(); gc.ellipse(0,0,rx,ry,0,0,7); gc.fill();
+  gc.strokeStyle = 'rgba(42,61,44,.3)'; gc.lineWidth = .7;
+  for(let x=-rx+8;x<rx-2;x+=5) for(let y=-ry+4;y<ry-2;y+=5){gc.beginPath();gc.arc(x,y,2,-1,1);gc.stroke();}
+  gc.beginPath();gc.ellipse(-rx*.55,0,3,ry*.75,0,-1.5,1.5);gc.stroke();
+  shape(gc, [[-3,2],[6,ry+3],[8,3]], '#8d986f');
+  gc.fillStyle = '#e7e1c3'; gc.beginPath();gc.arc(-rx+5,-2,2.5,0,7);gc.fill();
+  gc.fillStyle = '#182d28'; gc.beginPath();gc.arc(-rx+5,-2,1.4,0,7);gc.fill();gc.restore();
+}
+function cardFish() {
+  const cg = $('cfish').getContext('2d');
+  cg.setTransform(2, 0, 0, 2, 0, 0);
+  cg.clearRect(0, 0, 150, 80);
+  cg.save(); cg.translate(65, 42); cg.scale(1.5, 1.5); drawFish(0, 0, cg); cg.restore();
 }
 function draw() {
   const l = L[sl.value];
