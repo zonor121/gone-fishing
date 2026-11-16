@@ -153,13 +153,6 @@ function drawWeatherEffects(g2, time2) {
       const x = (noise(i + 950) * 800 + time2 * 24) % 800, y = 195 + noise(i + 960) * 210, r = 2 + ((time2 * 14 + i * 9) % 16);
       g2.beginPath(); g2.ellipse(x, y, r, r * .3, 0, 0, 7); g2.stroke();
     }
-  } else if (wx === 'fog') {
-    for (let i = 0; i < 5; i++) {
-      const y = 150 + i * 52, x = ((time2 * (9 + i * 3)) % (800 + 320)) - 160;
-      g2.fillStyle = `rgba(226,232,228,${.16 - i * .015})`;
-      g2.beginPath(); g2.ellipse(x, y, 260, 26 + i * 4, 0, 0, 7); g2.fill();
-      g2.beginPath(); g2.ellipse((x + 430) % 960 - 80, y + 8, 220, 20 + i * 3, 0, 0, 7); g2.fill();
-    }
   } else if (wx === 'wind') {
     g2.strokeStyle = 'rgba(235,240,235,.28)'; g2.lineWidth = .7;
     for (let i = 0; i < 9; i++) {
@@ -176,6 +169,49 @@ function drawWeatherEffects(g2, time2) {
     glow.addColorStop(0, 'rgba(255,214,120,.5)'); glow.addColorStop(1, 'rgba(255,214,120,0)');
     g2.fillStyle = glow; g2.beginPath(); g2.arc(p[0], p[1], 26, 0, 7); g2.fill();
   }
+}
+// Туман: вуаль у горизонта и два дрейфующих слоя мягких хлопььев вместо плоских эллипсов.
+// Рисуется до поплавка и снастей: дальность тонет, передний план остаётся читаемым.
+let fogTex = null, fogTexKey = '';
+function fogColor() {
+  const P = getPalette();
+  return P.part === 'night' ? mix(P.haze, '#8fa0b4', .4) : mix(P.haze, '#e9eee9', .65);
+}
+function buildFogTex(col) {
+  const mk = (h, n, seed, rMax, squash) => {
+    const cv = document.createElement('canvas'); cv.width = 960; cv.height = h;
+    const c = cv.getContext('2d');
+    for (let i = 0; i < n; i++) {
+      const x = noise(i + seed) * 960, y = h * (.3 + noise(i + seed + 1) * .4);
+      const r = rMax * (.45 + noise(i + seed + 2) * .55), a = .12 + noise(i + seed + 3) * .18;
+      // Копии со сдвигом на ширину полотна дают бесшовный горизонтальный луп.
+      for (const ox of [-960, 0, 960]) {
+        c.save(); c.translate(x + ox, y); c.scale(1, squash);
+        const rad = c.createRadialGradient(0, 0, r * .15, 0, 0, r);
+        rad.addColorStop(0, rgba(col, a)); rad.addColorStop(1, rgba(col, 0));
+        c.fillStyle = rad; c.beginPath(); c.arc(0, 0, r, 0, 7); c.fill(); c.restore();
+      }
+    }
+    return cv;
+  };
+  return [mk(180, 54, 5100, 95, .5), mk(120, 38, 5200, 70, .42)];
+}
+function drawFog(g2, time2) {
+  if (currentWeather() !== 'fog') return;
+  const col = fogColor();
+  if (fogTexKey !== col) { fogTex = buildFogTex(col); fogTexKey = col; }
+  const veil = g2.createLinearGradient(0, 108, 0, 262);
+  veil.addColorStop(0, rgba(col, 0)); veil.addColorStop(.48, rgba(col, .55)); veil.addColorStop(1, rgba(col, 0));
+  g2.fillStyle = veil; g2.fillRect(0, 108, 800, 154);
+  const tile = (tex, y, h, speed, alpha, bob) => {
+    const off = (time2 * speed) % 960;
+    g2.globalAlpha = alpha;
+    g2.drawImage(tex, -off, y + bob, 960, h);
+    g2.drawImage(tex, 960 - off, y + bob, 960, h);
+    g2.globalAlpha = 1;
+  };
+  tile(fogTex[0], 128, 124, 6, 1, Math.sin(time2 * .23) * 2);
+  tile(fogTex[1], 222, 94, 14, .7, Math.sin(time2 * .35 + 1) * 3);
 }
 // Ветер сносит заброс: разброс дальности при каждом забросе.
 function windRangeFactor() { return currentWeather() === 'wind' ? .88 + Math.random() * .24 : 1; }

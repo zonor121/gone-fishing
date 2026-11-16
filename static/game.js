@@ -298,6 +298,7 @@ function draw() {
   drawEnvironment(l,time);
   drawFirstPersonDock();
   }
+  drawFog(g, time);
   const [tx, ty] = rodTip(), target=waterPoint(bx);
   let px=null, py=0, scale=1;
   if(S==='fly') {px=tx+(target[0]-tx)*cast;py=ty+(target[1]-ty)*cast-Math.sin(cast*Math.PI)*90;scale=1-cast*.35;}
