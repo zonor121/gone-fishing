@@ -143,16 +143,7 @@ function dayTint(g2) {
 function drawWeatherEffects(g2, time2) {
   const wx = currentWeather(), part = currentDayPart();
   if (wx === 'rain') {
-    g2.strokeStyle = 'rgba(190,215,235,.45)'; g2.lineWidth = .8;
-    for (let i = 0; i < 70; i++) {
-      const x = (noise(i + 900) * 860 + time2 * 260) % 860 - 30, y = (noise(i + 901) * 420 + time2 * 430) % 440;
-      g2.beginPath(); g2.moveTo(x, y); g2.lineTo(x - 4, y + 13); g2.stroke();
-    }
-    g2.strokeStyle = 'rgba(210,230,240,.30)';
-    for (let i = 0; i < 22; i++) {
-      const x = (noise(i + 950) * 800 + time2 * 24) % 800, y = 195 + noise(i + 960) * 210, r = 2 + ((time2 * 14 + i * 9) % 16);
-      g2.beginPath(); g2.ellipse(x, y, r, r * .3, 0, 0, 7); g2.stroke();
-    }
+    drawRain(g2, time2);
   } else if (wx === 'wind') {
     g2.strokeStyle = 'rgba(235,240,235,.28)'; g2.lineWidth = .7;
     for (let i = 0; i < 9; i++) {
@@ -212,6 +203,69 @@ function drawFog(g2, time2) {
   };
   tile(fogTex[0], 128, 124, 6, 1, Math.sin(time2 * .23) * 2);
   tile(fogTex[1], 222, 94, 14, .7, Math.sin(time2 * .35 + 1) * 3);
+}
+// Дождь: три слоя глубины (дальний мелкий/тусклый → ближний крупный/яркий),
+// tapered-штрихи из предрендеренного спрайта, наклон от ветра и всплески на воде.
+const RAIN_LAYERS = [
+  { n: 46, seed: 900, speed: 300, len: 11, w: .7, alpha: .26, slant: .10 },
+  { n: 34, seed: 940, speed: 470, len: 18, w: .95, alpha: .40, slant: .16 },
+  { n: 22, seed: 980, speed: 660, len: 27, w: 1.25, alpha: .58, slant: .22 }
+];
+let rainTex = null, rainTexKey = '';
+function rainColor() {
+  const P = getPalette();
+  return mix(P.part === 'night' ? '#7f93ad' : '#cfe0ee', P.haze, .25);
+}
+function buildRainStreak(col) {
+  const cv = document.createElement('canvas'); cv.width = 4; cv.height = 36;
+  const c = cv.getContext('2d');
+  const gr = c.createLinearGradient(0, 0, 0, 36);
+  gr.addColorStop(0, rgba(col, 0)); gr.addColorStop(.55, rgba(col, .45)); gr.addColorStop(1, rgba(col, 1));
+  c.strokeStyle = gr; c.lineWidth = 1.6; c.lineCap = 'round';
+  c.beginPath(); c.moveTo(2, 1); c.lineTo(2, 35); c.stroke();
+  return cv;
+}
+function drawRain(g2, time2) {
+  const col = rainColor();
+  if (rainTexKey !== col) { rainTex = buildRainStreak(col); rainTexKey = col; }
+  const gust = Math.sin(time2 * .3) * .04;
+  const wrap = (v, m) => ((v % m) + m) % m;
+  for (const L of RAIN_LAYERS) {
+    const ang = L.slant + gust;
+    for (let i = 0; i < L.n; i++) {
+      const x = wrap(noise(i + L.seed) * 900 - time2 * 24, 900) - 50;
+      const y = wrap(noise(i + L.seed + 1) * 460 + time2 * L.speed, 460) - 20;
+      const len = L.len * (.8 + noise(i + L.seed + 2) * .45);
+      g2.save();
+      g2.globalAlpha = L.alpha * (.7 + noise(i + L.seed + 3) * .5);
+      g2.translate(x, y); g2.rotate(ang); g2.scale(L.w, len / 36);
+      g2.drawImage(rainTex, -2, -36);
+      g2.restore();
+    }
+  }
+  // Всплески: расходящиеся затухающие кольца с перспективой (мельче у горизонта).
+  const ring = mix(col, '#ffffff', .35);
+  g2.lineWidth = .8;
+  for (let i = 0; i < 26; i++) {
+    const t = noise(i + 1020);                       // 0 горизонт → 1 ближняя вода
+    const x = noise(i + 1030) * 800, y = 245 + t * 150, sc = .45 + t * .85;
+    const prog = wrap(time2 / 1.1 + noise(i + 1040), 1);
+    const r = 9 * prog * sc, a = (1 - prog) * .5;
+    g2.strokeStyle = rgba(ring, a);
+    g2.beginPath(); g2.ellipse(x, y, r, r * .32, 0, 0, 7); g2.stroke();
+    if (prog > .2) {
+      g2.strokeStyle = rgba(ring, a * .5);
+      g2.beginPath(); g2.ellipse(x, y, r * .55, r * .18, 0, 0, 7); g2.stroke();
+    }
+    if (prog < .18) {                                // корона в момент удара
+      g2.strokeStyle = rgba(ring, (1 - prog / .18) * .55);
+      for (let k = -1; k <= 1; k++) {
+        g2.beginPath(); g2.moveTo(x + k * 2 * sc, y);
+        g2.lineTo(x + k * 3.4 * sc, y - (4 - Math.abs(k)) * sc); g2.stroke();
+      }
+    }
+  }
+  g2.globalAlpha = 1;
 }
 // Ветер сносит заброс: разброс дальности при каждом забросе.
 function windRangeFactor() { return currentWeather() === 'wind' ? .88 + Math.random() * .24 : 1; }
