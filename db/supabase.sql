@@ -247,6 +247,15 @@ BEGIN
     'heaviest',(SELECT jsonb_build_object('name',f.name,'weight',c.weight_kg) FROM catch c JOIN fish f ON f.id=c.fish_id WHERE c.user_id=u ORDER BY c.weight_kg DESC,c.id LIMIT 1),
     'species',coalesce((SELECT jsonb_agg(to_jsonb(x)-'sort_price' ORDER BY sort_price) FROM (SELECT f.id,f.name,count(*) n,max(c.weight_kg) best,f.price sort_price FROM catch c JOIN fish f ON f.id=c.fish_id WHERE c.user_id=u GROUP BY f.id) x),'[]'),
     'species_total',(SELECT count(*) FROM fish),'discovered',(SELECT count(DISTINCT fish_id) FROM catch WHERE user_id=u)));
+ ELSIF action='leaderboard' THEN
+  -- Топ-10: по весу каждого вида (все уловы, лучший на игрока) и по цене одиночной рыбы (kept=1).
+  RETURN jsonb_build_object(
+   'price',coalesce((SELECT jsonb_agg(jsonb_build_object('username',b.username,'fish',f.name,'weight',b.weight_kg,'price',b.price,'caught_at',b.caught_at,'you',b.user_id=u) ORDER BY b.price DESC,b.id)
+    FROM (SELECT b0.*,uu.username,row_number() OVER (ORDER BY b0.price DESC,b0.id) pos FROM (SELECT c.id,c.user_id,c.fish_id,c.weight_kg,c.price,c.caught_at,row_number() OVER (PARTITION BY c.user_id ORDER BY c.price DESC,c.id) rn FROM catch c WHERE c.kept=1 AND c.price>0) b0 JOIN fishing_user uu ON uu.id=b0.user_id WHERE b0.rn=1) b JOIN fish f ON f.id=b.fish_id WHERE b.pos<=10),'[]'),
+   'fish',(SELECT jsonb_agg(jsonb_build_object('id',f.id,'rows',coalesce(g.rows,'[]')) ORDER BY f.price,f.id) FROM fish f LEFT JOIN (
+    SELECT b.fish_id,jsonb_agg(jsonb_build_object('username',b.username,'weight',b.weight_kg,'caught_at',b.caught_at,'you',b.user_id=u) ORDER BY b.weight_kg DESC,b.id) rows
+    FROM (SELECT b0.*,uu.username,row_number() OVER (PARTITION BY b0.fish_id ORDER BY b0.weight_kg DESC,b0.id) pos FROM (SELECT c.id,c.user_id,c.fish_id,c.weight_kg,c.caught_at,row_number() OVER (PARTITION BY c.fish_id,c.user_id ORDER BY c.weight_kg DESC,c.id) rn FROM catch c) b0 JOIN fishing_user uu ON uu.id=b0.user_id WHERE b0.rn=1) b
+    WHERE b.pos<=10 GROUP BY b.fish_id) g ON g.fish_id=f.id));
  ELSIF action='cast' THEN
   SELECT * INTO l FROM location WHERE code=d->>'location';
   IF NOT FOUND THEN RAISE EXCEPTION 'Неизвестная локация.' USING ERRCODE='P0001'; END IF;

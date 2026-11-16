@@ -112,6 +112,30 @@ def _get_state(c, uid):
                       'weather': weather, 'weather_left': max(0, int(weather_until - now))},
             'quests': quests, 'achievements': achievements, 'diary': diary}
 
+# ---------- лидерборд: лучшие уловы всех игроков ----------
+def get_leaderboard(uid):
+    with closing(conn()) as c:
+        names = {r['id']: r['username'] for r in c.execute('SELECT id, username FROM user')}
+        # По весу идут все уловы (и отпущенные); у каждого игрока — только его лучший.
+        best = c.execute('''SELECT fish_id, user_id, weight_kg, caught_at FROM (
+              SELECT c.*, ROW_NUMBER() OVER (PARTITION BY fish_id, user_id ORDER BY weight_kg DESC, id) rn
+              FROM catch c) WHERE rn=1 ORDER BY fish_id, weight_kg DESC, id''').fetchall()
+        boards = {}
+        for r in best:
+            rows = boards.setdefault(r['fish_id'], [])
+            if len(rows) < 10:
+                rows.append({'username': names[r['user_id']], 'weight': r['weight_kg'],
+                             'caught_at': r['caught_at'], 'you': r['user_id'] == uid})
+        order = [r['id'] for r in c.execute('SELECT id FROM fish ORDER BY price, id')]
+        # По стоимости — самая дорогая одиночная рыба (отпущенные имеют цену 0 и не участвуют).
+        fish_names = {r['id']: r['name'] for r in c.execute('SELECT id, name FROM fish')}
+        top = c.execute('''SELECT user_id, fish_id, weight_kg, price, caught_at FROM (
+              SELECT c.*, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY price DESC, id) rn
+              FROM catch c WHERE kept=1 AND price>0) WHERE rn=1 ORDER BY price DESC, id LIMIT 10''').fetchall()
+        price = [{'username': names[r['user_id']], 'fish': fish_names[r['fish_id']], 'weight': r['weight_kg'],
+                  'price': r['price'], 'caught_at': r['caught_at'], 'you': r['user_id'] == uid} for r in top]
+    return {'price': price, 'fish': [{'id': fid, 'rows': boards.get(fid, [])} for fid in order]}
+
 # ---------- запись: каждая функция возвращает (http_code, json) ----------
 def weighted_price(fish, w):
     """Награда зависит от веса: 0.75× базовой цены при min_kg, 1.75× при max_kg (линейно)."""
@@ -277,7 +301,8 @@ def health():
     return {'ok': True}
 
 # SQLite remains available explicitly for offline tests and legacy saves.
-_sqlite_current_user, _sqlite_config, _sqlite_state, _sqlite_health = current_user, get_config, get_state, health
+_sqlite_current_user, _sqlite_config, _sqlite_state, _sqlite_health, _sqlite_leaderboard = \
+    current_user, get_config, get_state, health, get_leaderboard
 
 def client():
     global SUPABASE
@@ -293,6 +318,9 @@ def get_config():
 
 def get_state(uid):
     return client().rpc('state', {'uid': uid}) if DB_BACKEND == 'supabase' else _sqlite_state(uid)
+
+def get_leaderboard(uid):
+    return client().rpc('leaderboard', {'uid': uid}) if DB_BACKEND == 'supabase' else _sqlite_leaderboard(uid)
 
 def health():
     return client().rpc('health') if DB_BACKEND == 'supabase' else _sqlite_health()
@@ -344,6 +372,11 @@ class Handler(SimpleHTTPRequestHandler):
                 if not user:
                     return self.send_json({'ok': False, 'error': 'Требуется вход'}, 401)
                 return self.send_json(get_state(user[0]))
+            if path == '/api/leaderboard':
+                user = current_user(self.headers)
+                if not user:
+                    return self.send_json({'ok': False, 'error': 'Требуется вход'}, 401)
+                return self.send_json(get_leaderboard(user[0]))
         except (sqlite3.Error, supabase_db.DatabaseError) as e:
             print('DB error:', e, file=sys.stderr)
             return self.send_json({'ok': False, 'error': 'База данных недоступна'}, 503)

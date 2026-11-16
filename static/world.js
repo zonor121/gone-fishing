@@ -37,8 +37,8 @@ function activityLabel(f) {
 }
 
 // ---------- переключение вкладок ----------
-const VIEW_IDS = { fishing: 'fishing-view', guide: 'guide-view', quests: 'quests-view', ach: 'ach-view', diary: 'diary-view' };
-const VIEW_BUTTONS = { fishing: 'bplay', guide: 'bguide', quests: 'bquests', ach: 'bach', diary: 'bdiary' };
+const VIEW_IDS = { fishing: 'fishing-view', guide: 'guide-view', quests: 'quests-view', ach: 'ach-view', diary: 'diary-view', lb: 'lb-view' };
+const VIEW_BUTTONS = { fishing: 'bplay', guide: 'bguide', quests: 'bquests', ach: 'bach', diary: 'bdiary', lb: 'blb' };
 function showView(name) {
   if (!VIEW_IDS[name]) name = 'fishing';
   hold = 0;

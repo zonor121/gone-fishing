@@ -19,7 +19,7 @@ Supabase-проектов. Свежая установка может сразу
 
 1. Supabase Dashboard → **SQL Editor** → New query.
 2. Вставьте содержимое `001_weighted_catch_price.sql` → **Run** (ожидается `Success. No rows returned`).
-3. Повторите для `002_boat_price_10000_and_spin_bait.sql` и `003_bells_200.sql`.
+3. Повторите для `002_boat_price_10000_and_spin_bait.sql`, `003_bells_200.sql` и `004_leaderboard.sql`.
 4. Проверка: `SELECT fishing_api('health');` → `{"ok":true}`.
 
 Альтернатива — Supabase CLI: `supabase db execute -f db/migrations/001_weighted_catch_price.sql`
@@ -33,3 +33,4 @@ Supabase-проектов. Свежая установка может сразу
 | 1 | `001_weighted_catch_price.sql` | Награда за рыбу зависит от веса: 0.75× цены при `min_kg` до 1.75× при `max_kg`, линейно с округлением вверх. Лодка ещё 6 000 ₽, блесна расходуется на каждом забросе. |
 | 2 | `002_boat_price_10000_and_spin_bait.sql` | Лодка подорожала до 10 000 ₽ (проверка, списание, сообщения, `boat_price` в конфиге). Блесна расходуется только в 25% забросов: `random() < 0.25`; ответ `cast` содержит `bait_kept=true`, когда наживка не потрачена. |
 | 3 | `003_bells_200.sql` | Колокольчики за 200 ₽: колонка `player.bells_owned`, `buy` с `item='bells'` (409 при повторе, 400 при нехватке денег), `bells_owned` в `state`, `bells_price=200` в `config`. Звон при поклёвке — на клиенте. |
+| 4 | `004_leaderboard.sql` | Лидерборд «Рекорды»: `action='leaderboard'` — топ-10 по весу каждого вида (все уловы, лучший на игрока) и топ-10 по стоимости одиночной рыбы (`kept=1`). Таблицы не меняются. До применения этой миграции `GET /api/leaderboard` на Supabase возвращает 503. |

@@ -40,6 +40,7 @@ async function boot() {
   initLocations();
   initWorld();
   initGuide();
+  initLeaderboard();
   if (!tutDone) setTut(0);
   requestAnimationFrame(loop);
 }
