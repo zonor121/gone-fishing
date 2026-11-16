@@ -84,7 +84,7 @@ class SupabaseTests(unittest.TestCase):
         migs = sorted((root / 'db/migrations').glob('[0-9][0-9][0-9]_*.sql'))
         self.assertEqual([m.name for m in migs],
                          ['001_weighted_catch_price.sql', '002_boat_price_10000_and_spin_bait.sql',
-                          '003_bells_200.sql', '004_leaderboard.sql'])
+                          '003_bells_200.sql', '004_leaderboard.sql', '005_fight_styles_rods_trophies.sql'])
         last = migs[-1].read_text(encoding='utf-8')
         # заголовок-комментарий допускается; тело функции должно совпадать с api посимвольно
         self.assertIn(api_fn, last, 'последняя миграция устарела относительно db/supabase_api.sql')
@@ -98,3 +98,9 @@ class SupabaseTests(unittest.TestCase):
         self.assertNotIn("d->>'item'='bells'", migs[1].read_text(encoding='utf-8'))
         self.assertIn("action='leaderboard'", last)                # лидерборд появился только в 004
         self.assertNotIn("action='leaderboard'", migs[2].read_text(encoding='utf-8'))
+        self.assertIn("d->>'item'='rod'", last)                    # магазин удочек и трофеи — только в 005
+        self.assertIn('trophy_value', last)
+        self.assertNotIn("d->>'item'='rod'", migs[3].read_text(encoding='utf-8'))
+        for ddl in ('ADD COLUMN IF NOT EXISTS fight_style', 'ADD COLUMN IF NOT EXISTS rod_level',
+                    'ADD COLUMN IF NOT EXISTS trophy'):
+            self.assertIn(ddl, last)
