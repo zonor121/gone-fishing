@@ -91,7 +91,7 @@ function renderAchievements() {
 }
 function renderDiary() {
   if (!DIARY) return;
-  const heaviest = DIARY.heaviest ? `${DIARY.heaviest.name} · ${DIARY.heaviest.weight.toFixed(2)} кг` : 'пока никого';
+  const heaviest = DIARY.heaviest ? `${DIARY.heaviest.name} · ${DIARY.heaviest.weight.toFixed(2)} кг${DIARY.heaviest.trophy ? ' · трофей' : ''}` : 'пока никого';
   $('diary-summary').textContent = `${DIARY.total} рыб за всё время`;
   const caught = new Map(DIARY.species.map(s => [s.id, s]));
   const rows = F.map(f => {

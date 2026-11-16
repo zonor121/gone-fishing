@@ -13,7 +13,7 @@ document.querySelector('#run').onclick=async()=>{
  try{
   check(E('S==="idle" && boatOwned'),'Покупка лодки сохранена после перезагрузки страницы');
   const before=await (await fetch('/api/state')).json();
-  E('sl.value="sea";sb.value="shrimp";sr.value=2;updateLocationInfo();draw()');
+  E('sl.value="sea";sb.value="shrimp";rodLevel=3;fillRodSelect();sr.value=2;trophyChance=0;updateLocationInfo();draw()');
   check(E('landscapeKey==="sea"'),'Морская сцена отрисована');
   check(E('F.filter(f=>f.locs.includes("sea")).length===4'),'Четыре исключительно морских вида доступны в игре');
   E('down()');step(40);check(E('S==="charge"&&pw>0'),'Удержание заряжает заброс');
