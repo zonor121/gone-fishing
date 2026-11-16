@@ -136,26 +136,46 @@ function paintLandscape(l) {
   if(l.code==='sea'){paintSea(c);return;}
   const P=getPalette();
   paintSky(c,190,true);
-  for(let layer=0;layer<4;layer++) {
-    const base=150+layer*10, pts=[[0,200],[0,base]];
-    const ridge=x=>base-9*Math.sin(x*.009+layer)-7*Math.sin(x*.019+layer*2);
-    for(let x=0;x<=820;x+=8)pts.push([x,ridge(x)]);
-    pts.push([800,200]);shape(c,pts,P.ridges[layer]);
-    for(let i=0;i<130;i++) {
-      const x=i*6.4+noise(i)*5,h=10+noise(i+layer*99)*(layer*7+16);
-      tree(c,x,ridge(x)+4,h,P.trees[layer],l.forest || noise(i+6)>.68);
+  if(l.code==='pond') {
+    // Пруд замкнут: вместо дальних гряд — стена хвойного леса в три яруса.
+    for(let layer=0;layer<3;layer++) {
+      const base=118+layer*26;
+      shape(c,[[0,200],[0,base+34],[800,base+34],[800,200]],mix(P.trees[layer+1],P.haze,.22-layer*.08));
+      for(let i=0;i<70;i++) {
+        const x=i*11.6+noise(i+layer*7)*9,h=34+noise(i+layer*99)*(46+layer*26);
+        tree(c,x,base+34,h,P.trees[layer+1],true);
+      }
+      if(layer<2){const hz=c.createLinearGradient(0,base,0,200);hz.addColorStop(0,rgba(P.haze,0));hz.addColorStop(1,rgba(P.haze,.14-layer*.05));c.fillStyle=hz;c.fillRect(0,base,800,200-base);}
     }
-    // Воздушная перспектива: дальние гряды сильнее укрыты дымкой (мягкий градиент без кромки).
-    if(layer<3){const hz=c.createLinearGradient(0,110,0,200);hz.addColorStop(0,rgba(P.haze,0));hz.addColorStop(1,rgba(P.haze,[.16,.09,.04][layer]));c.fillStyle=hz;c.fillRect(0,110,800,90);}
+  } else {
+    const layers=l.code==='lake'?2:4, low=l.code==='lake';
+    for(let layer=0;layer<layers;layer++) {
+      const base=low?158+layer*12:150+layer*10, amp=low?5:9;
+      const pts=[[0,200],[0,base]];
+      const ridge=x=>base-amp*Math.sin(x*.009+layer)-amp*.8*Math.sin(x*.019+layer*2);
+      for(let x=0;x<=820;x+=8)pts.push([x,ridge(x)]);
+      pts.push([800,200]);shape(c,pts,P.ridges[layer]);
+      for(let i=0;i<130;i++) {
+        const x=i*6.4+noise(i)*5,h=(low?6:10)+noise(i+layer*99)*(layer*7+(low?9:16));
+        tree(c,x,ridge(x)+4,h,P.trees[layer],l.forest || noise(i+6)>.68);
+      }
+      // Воздушная перспектива: дальние гряды сильнее укрыты дымкой (мягкий градиент без кромки).
+      if(layer<layers-1){const hz=c.createLinearGradient(0,110,0,200);hz.addColorStop(0,rgba(P.haze,0));hz.addColorStop(1,rgba(P.haze,[.16,.09,.04][layer]));c.fillStyle=hz;c.fillRect(0,110,800,90);}
+    }
+    if(low) {
+      // Дальний берег озера: полоса леса по ту сторону воды, с прогалинами.
+      for(let i=0;i<150;i++){if(noise(i+505)>.82)continue;const x=i*5.4+noise(i+501)*4,h=4+noise(i+502)*11;tree(c,x,180+noise(i+503)*3,h,mix(P.trees[2],P.haze,.35),noise(i+504)>.5);}
+    }
   }
   // Береговая кромка и отражение берега используют одну геометрию.
-  shape(c,[[0,182],[130,180],[310,184],[470,181],[640,179],[800,184],[800,191],[0,191]],P.bank);
+  const bankCol=l.code==='lake'?mix(P.bank,'#9a8f6a',.45):P.bank;
+  shape(c,[[0,182],[130,180],[310,184],[470,181],[640,179],[800,184],[800,191],[0,191]],bankCol);
   c.strokeStyle=rgba(P.haze,.55);c.lineWidth=.7;c.beginPath();c.moveTo(0,187);c.bezierCurveTo(240,181,550,190,800,185);c.stroke();
   const r=reflectedBank.getContext('2d');r.clearRect(0,0,1600,840);r.drawImage(landscape,0,0);
   const water=c.createLinearGradient(0,185,0,420);
   water.addColorStop(0,P.water[0]);
-  water.addColorStop(.25,l.forest?mix(P.water[1],'#5d7a62',.35):P.water[1]);
-  water.addColorStop(.65,l.current?mix(P.water[2],'#3a6b5e',.35):P.water[2]);
+  water.addColorStop(.25,l.code==='pond'?mix(P.water[1],'#375a44',.45):l.code==='lake'?mix(P.water[1],'#6d94a8',.3):l.forest?mix(P.water[1],'#5d7a62',.35):P.water[1]);
+  water.addColorStop(.65,l.code==='pond'?mix(P.water[2],'#22402f',.4):l.current?mix(P.water[2],'#3a6b5e',.35):l.code==='lake'?mix(P.water[2],'#3f6f80',.25):P.water[2]);
   water.addColorStop(1,P.water[3]);
   c.fillStyle=water;c.fillRect(0,188,800,232);
   for(let y=188;y<420;y+=2) {
@@ -169,9 +189,10 @@ function paintLandscape(l) {
     c.fillStyle=i%3?'rgba(197,215,200,.055)':'rgba(17,43,36,.1)';
     c.fillRect(x,y,1+z*noise(i+12)*34,.3+z*.6);
   }
-  if(P.mist>0) {
+  const mistAmt=P.mist+(l.code==='pond'?.08:0);
+  if(mistAmt>0) {
     const m=c.createLinearGradient(0,188,0,252);
-    m.addColorStop(0,rgba(P.haze,P.mist));m.addColorStop(1,rgba(P.haze,0));
+    m.addColorStop(0,rgba(P.haze,mistAmt));m.addColorStop(1,rgba(P.haze,0));
     c.fillStyle=m;c.fillRect(0,188,800,64);
   }
   if(l.current) {
@@ -180,21 +201,80 @@ function paintLandscape(l) {
     c.strokeStyle=rgba(P.haze,.5);c.lineWidth=1;c.beginPath();c.moveTo(800,242);c.quadraticCurveTo(706,210,633,204);c.stroke();
     for(let i=0;i<170;i++){const x=689+noise(i+36)*111,y=192+noise(i+77)*13;c.strokeStyle=i%2?'#727b50':'#3f563b';c.beginPath();c.moveTo(x,y);c.lineTo(x-2,y-3-noise(i)*8);c.stroke();}
   }
-  if(l.forest) {
+  if(l.code==='river') {
+    // Галечная коса слева от струи и два камня с барашками.
+    shape(c,[[120,232],[200,227],[280,230],[330,236],[260,242],[160,240]],mix(bankCol,'#8f8a70',.5));
+    c.strokeStyle=rgba(P.haze,.4);c.lineWidth=.7;c.beginPath();c.moveTo(120,232);c.quadraticCurveTo(220,225,330,236);c.stroke();
+    for(let i=0;i<60;i++){const x=140+noise(i+310)*175,y=230+noise(i+311)*8;c.strokeStyle=i%2?'#6d7a4e':'#47593c';c.lineWidth=.7;c.beginPath();c.moveTo(x,y);c.lineTo(x-1.5,y-3-noise(i+312)*6);c.stroke();}
+    for(const [sx,sy,sr2] of [[560,262,7],[210,285,9]]) {
+      c.fillStyle=mix('#7d7f66',P.water[3],.3);c.beginPath();c.ellipse(sx,sy,sr2,sr2*.5,0,0,7);c.fill();
+      c.strokeStyle=rgba(P.waveLight,.5);c.lineWidth=.8;
+      c.beginPath();c.moveTo(sx-sr2-6,sy+2);c.quadraticCurveTo(sx,sy-sr2*.6,sx+sr2+6,sy+2);c.stroke();
+    }
+  }
+  if(l.code==='pond') {
     const dim=P.part==='night'?.55:P.part==='evening'?.2:0;
-    for(let i=0;i<24;i++) {
-      const x=20+noise(i+63)*140,y=266+noise(i+43)*83,r=3+(y-260)*.07;
+    for(let i=0;i<40;i++) {
+      const x=40+noise(i+63)*200,y=250+noise(i+43)*110,r=3+(y-245)*.06;
       c.fillStyle='rgba(17,38,30,.3)';c.beginPath();c.ellipse(x+2,y+2,r*1.3,r*.35,0,0,7);c.fill();
       c.fillStyle=mix(i%2?'#5e7248':'#788257',P.water[3],dim);c.beginPath();c.ellipse(x,y,r,r*.4,-.12,.2,6);c.lineTo(x,y);c.fill();
       c.strokeStyle=`rgba(188,192,131,${.4*(1-dim)})`;c.lineWidth=.5;c.beginPath();c.moveTo(x,y);c.lineTo(x-r*.7,y);c.stroke();
+      if(i%9===0){
+        c.fillStyle=mix('#f2f4e8','#8fa088',dim);
+        for(let p2=0;p2<5;p2++){const a=p2*1.256+i;c.beginPath();c.ellipse(x+Math.cos(a)*2.4,y+Math.sin(a)*1.2,2,1,a,0,7);c.fill();}
+        c.fillStyle=mix('#e8d982','#7a7448',dim);c.beginPath();c.arc(x,y,1.1,0,7);c.fill();
+      }
     }
+    // Затопленное бревно, уходящее от левого берега в воду.
+    shape(c,[[0,303],[148,283],[160,291],[10,315]],mix('#5d4a33',P.water[3],.35));
+    c.strokeStyle=mix('#8a7154',P.water[3],.3);c.lineWidth=1;
+    c.beginPath();c.moveTo(2,304);c.lineTo(148,284);c.stroke();
+    c.strokeStyle=mix('#3f3222',P.water[3],.3);c.lineWidth=.7;
+    for(let i=0;i<4;i++){const o=i*2.2;c.beginPath();c.moveTo(4,306+o);c.lineTo(150,287+o*.8);c.stroke();}
+    c.strokeStyle=mix('#4a3a28',P.water[3],.3);c.lineWidth=3;
+    c.beginPath();c.moveTo(70,296);c.lineTo(76,288);c.stroke();
+    c.beginPath();c.moveTo(112,291);c.lineTo(117,284);c.stroke();
+    c.fillStyle=mix('#4a3a28',P.water[3],.3);c.beginPath();c.ellipse(154,287,6,3.4,-.13,0,7);c.fill();
+    c.fillStyle='rgba(10,25,18,.25)';c.beginPath();c.ellipse(80,318,80,5,0,0,7);c.fill();
   }
   // Ближний берег остаётся по краям, оставляя центр открытым для ловли.
   shape(c,[[0,290],[24,308],[49,349],[82,420],[0,420]],'#303f2d');
-  for(let i=0;i<90;i++) {
+  if(l.code==='pond') shape(c,[[800,300],[770,320],[748,360],[726,420],[800,420]],'#2c3a29');
+  const stones=l.code==='lake'?45:90;
+  for(let i=0;i<stones;i++) {
     const x=noise(i+71)*42,y=335+noise(i+81)*85,r=2+noise(i+91)*7;
-    const stone=c.createLinearGradient(x,y-r,x,y+r);stone.addColorStop(0,'#8a8b71');stone.addColorStop(1,'#3d493c');
+    const stone=c.createLinearGradient(x,y-r,x,y+r);
+    stone.addColorStop(0,l.code==='lake'?'#a3987a':'#8a8b71');stone.addColorStop(1,l.code==='lake'?'#5d5a44':'#3d493c');
     c.fillStyle=stone;c.beginPath();c.ellipse(x,y,r,r*.55,-.4,0,7);c.fill();
+  }
+  if(l.code==='river') {
+    // Ива над водой: раскидистая крона и частые свисающие пряди с листвой.
+    const trunk=mix('#5a4a33',P.water[3],.2);
+    c.strokeStyle=trunk;c.lineWidth=8;
+    c.beginPath();c.moveTo(24,368);c.quadraticCurveTo(52,306,104,276);c.stroke();
+    c.lineWidth=4;c.beginPath();c.moveTo(64,322);c.quadraticCurveTo(98,298,142,292);c.stroke();
+    c.lineWidth=2.5;c.beginPath();c.moveTo(96,282);c.quadraticCurveTo(120,266,150,262);c.stroke();
+    const leaf=mix('#75854c',P.water[3],P.part==='night'?.55:.12);
+    const leafLit=mix('#93a05e',P.water[3],P.part==='night'?.55:.1);
+    for(let i=0;i<26;i++){
+      const bx2=88+noise(i+420)*72,by=258+noise(i+421)*30,r=6+noise(i+422)*9;
+      c.fillStyle=i%3?leaf:leafLit;c.beginPath();c.ellipse(bx2,by,r,r*.62,(noise(i+423)-.5)*.6,0,7);c.fill();
+    }
+    c.lineWidth=.8;
+    for(let i=0;i<70;i++){
+      const bx2=86+noise(i+410)*80,by=266+noise(i+411)*30,len=36+noise(i+412)*62;
+      c.strokeStyle=i%4?leaf:leafLit;
+      c.beginPath();c.moveTo(bx2,by);c.quadraticCurveTo(bx2+5,by+len*.6,bx2+3+noise(i+413)*5,by+len);c.stroke();
+      for(let k2=1;k2<5;k2++){const u=k2/5;c.fillStyle=leafLit;c.fillRect(bx2+6*u-1,by+len*u,2.2,1.1);}
+    }
+  }
+  if(l.code==='pond') {
+    // Крупные ели по краям кадрируют замкнутую воду.
+    const frame=mix(P.trees[3],'#141f18',.45);
+    tree(c,64,420,220,mix(frame,P.trees[2],.3),true);
+    tree(c,742,420,240,mix(frame,P.trees[2],.3),true);
+    tree(c,26,420,300,frame,true);
+    tree(c,778,420,320,frame,true);
   }
 }
 function drawWaterSurface(time, sea=false, current=false) {
@@ -209,6 +289,25 @@ function drawWaterSurface(time, sea=false, current=false) {
     g.beginPath();g.moveTo(x,y);g.bezierCurveTo(x+span*.3,y-wave,x+span*.65,y+wave,x+span,y);g.stroke();
     if(i%3===0){g.strokeStyle=rgba(P.waveDark,z*.12);g.beginPath();g.moveTo(x,y+1.4);g.lineTo(x+span*.7,y+1.4);g.stroke();}
     if(sea&&rough>1.5&&i%6===0){g.strokeStyle='rgba(232,240,238,.35)';g.lineWidth=.8;g.beginPath();g.moveTo(x+span*.4,y-wave-1);g.lineTo(x+span*.55,y-wave-1);g.stroke();}
+  }
+  if(current) {
+    // Струи течения: длинные штрихи сносятся быстрее обычной ряби.
+    for(let i=0;i<26;i++){
+      const z=noise(i+2100),y=196+z*z*205,len=26+z*64;
+      const x=((noise(i+2200)*940-time*(16+z*26))%940+940)%940-70;
+      g.strokeStyle=rgba(P.waveLight,.04+z*.08);g.lineWidth=.4+z*.5;
+      g.beginPath();g.moveTo(x,y);g.quadraticCurveTo(x+len*.5,y-1.5-z*2,x+len,y);g.stroke();
+    }
+  }
+  if(sea) {
+    // Медленная океанская зыбь поверх ряби.
+    for(let i=0;i<3;i++){
+      const y=214+i*58+Math.sin(time*.35+i*1.7)*3;
+      g.strokeStyle=rgba(P.waveLight,.05+i*.01);g.lineWidth=1.1;
+      g.beginPath();g.moveTo(0,y);
+      for(let x=0;x<=800;x+=40)g.lineTo(x,y+Math.sin(x*.012+time*.5+i)*2.5);
+      g.stroke();
+    }
   }
   if(P.wx==='wind') {
     // Тёмные пятна-порывы скользят по воде.
@@ -236,12 +335,21 @@ function drawEnvironment(l, time) {
   const wind=typeof currentWeather==='function'&&currentWeather()==='wind'?2.5:1;
   const dim=currentDayPart()==='night'?.5:currentDayPart()==='evening'?.15:0;
   const reedDark=P.water[3];
-  for(let i=0;i<65;i++) {
+  const reedCount=l.code==='lake'?28:l.code==='pond'?50:45;
+  for(let i=0;i<reedCount;i++) {
     const x=noise(i+100)*73,y=372+noise(i+45)*50,h=25+noise(i+65)*80,sway=Math.sin(time*1.2+i*.7)*2*wind;
     g.strokeStyle=mix(['#334b31','#657249','#889065'][i%3],reedDark,dim);g.lineWidth=.7+noise(i)*1.1;
     g.beginPath();g.moveTo(x,y);g.quadraticCurveTo(x-5,y-h*.5,x+sway,y-h);g.stroke();
     g.beginPath();g.moveTo(x,y-8);g.quadraticCurveTo(x+18,y-h*.6,x+13,y-h*.7);g.stroke();
     if(i%4===0){g.strokeStyle=mix('#5b4934',reedDark,dim);g.lineWidth=2.5;g.beginPath();g.moveTo(x+sway,y-h);g.lineTo(x+sway,y-h+12);g.stroke();}
+  }
+  if(l.code==='pond') {
+    for(let i=0;i<24;i++) {
+      const x=738+noise(i+150)*58,y=378+noise(i+145)*42,h=22+noise(i+165)*70,sway=Math.sin(time*1.1+i*.9)*2*wind;
+      g.strokeStyle=mix(['#2e442c','#5a6a42','#7d875c'][i%3],reedDark,dim);g.lineWidth=.7+noise(i+5)*1.1;
+      g.beginPath();g.moveTo(x,y);g.quadraticCurveTo(x+4,y-h*.5,x+sway,y-h);g.stroke();
+      if(i%4===0){g.strokeStyle=mix('#54432f',reedDark,dim);g.lineWidth=2.3;g.beginPath();g.moveTo(x+sway,y-h);g.lineTo(x+sway,y-h+10);g.stroke();}
+    }
   }
   if(currentDayPart()!=='night'&&currentWeather()!=='rain') {
     g.strokeStyle='rgba(48,65,62,.6)';g.lineWidth=.8;

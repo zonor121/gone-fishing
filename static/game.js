@@ -111,6 +111,7 @@ function up() {
   hold = 0;
   if (S === 'charge') {
     S = 'fly'; cast = 0; lock(true); bx = R[sr.value].rng * Math.max(.08, pw) * windRangeFactor();
+    castWhoosh();
     castPending = true;
     post('/api/cast', {bait: sb.value, location: sl.value}).then(async r => {
       if (!r.ok) end(r.error || 'Не удалось забросить удочку.');
@@ -125,6 +126,23 @@ btn.onpointerdown = e => { e.preventDefault(); down(); };
 btn.onpointerup = btn.onpointerleave = btn.onpointercancel = up;
 addEventListener('keydown', e => { if (e.code === 'Space' && !e.repeat && !e.target.closest('button, select, input, textarea, a') && !document.querySelector('.modal[style*="flex"]')) { e.preventDefault(); down(); } });
 addEventListener('keyup', e => { if (e.code === 'Space') up(); });
+
+// ---- мут всех звуков ----
+(() => {
+  const b = $('bmute');
+  const paint = () => {
+    b.setAttribute('aria-pressed', String(muted));
+    b.setAttribute('aria-label', muted ? 'Включить звук' : 'Выключить звук');
+    b.title = muted ? 'Звук выключен (M)' : 'Звук включён (M)';
+  };
+  const toggle = () => { setMuted(!muted); paint(); };
+  b.addEventListener('click', e => { toggle(); if (e.detail) b.blur(); });
+  addEventListener('keydown', e => {
+    if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || document.querySelector('.modal[style*="flex"]')) return;
+    if (e.code === 'KeyM' && !e.target.closest('input, textarea, select')) { e.preventDefault(); toggle(); }
+  });
+  paint();
+})();
 
 // ---- логика ----
 function pick() {
@@ -150,7 +168,7 @@ function update(dt) {
     cast += dt / .8;
     if (cast >= 1) { S = 'wait'; pick(); say(fish ? 'Ждём поклёвку…' : 'Тишина… возможно, эта наживка здесь не подходит.'); label(); }
   } else if (S === 'wait' && fish) {
-    tm -= dt; if (tm <= 0) { S = 'bite'; tm = 2; say('Поклёвка!'); if (bellsOwned) bellChime(); label(); }
+    tm -= dt; if (tm <= 0) { S = 'bite'; tm = 2; say('Поклёвка!'); floatDip(); if (bellsOwned) bellChime(); label(); }
   } else if (S === 'bite') {
     tm -= dt; if (tm <= 0) end('Поклёвка пропущена — рыба ушла.', 1);
   } else if (S === 'reel') {
@@ -332,6 +350,8 @@ function draw() {
 }
 let accumulator = 0;
 function loop(ts) {
+  updateAmbience(!$('fishing-view').hidden && !document.hidden);
+  reelSound(S === 'reel' && hold === 1 && !$('fishing-view').hidden && !document.hidden);
   if ($('fishing-view').hidden) { last = ts; accumulator = 0; requestAnimationFrame(loop); return; }
   accumulator += Math.min(.1, (ts - last) / 1000 || 0); last = ts;
   while(accumulator >= 1/60) {update(1/60);accumulator -= 1/60;}

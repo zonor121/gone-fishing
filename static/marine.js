@@ -3,6 +3,9 @@ function paintSea(c) {
   const P=getPalette();
   paintSky(c,183);
   shape(c,[[0,181],[24,171],[46,175],[66,169],[102,183]],mix(P.ridges[0],'#8a9fa4',.35));
+  // Скалистый мыс на правом горизонте.
+  shape(c,[[800,183],[800,164],[772,166],[738,170],[706,176],[680,183]],mix(P.ridges[1],'#6e7d80',.4));
+  c.fillStyle=rgba(P.haze,.25);c.fillRect(680,177,120,6);
   const water=c.createLinearGradient(0,183,0,420);
   water.addColorStop(0,P.seaWater[0]);water.addColorStop(.12,P.seaWater[1]);water.addColorStop(.5,P.seaWater[2]);water.addColorStop(1,P.seaWater[3]);
   c.fillStyle=water;c.fillRect(0,183,800,237);
