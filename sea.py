@@ -1,11 +1,14 @@
 """Идемпотентное расширение существующих сохранений морской рыбалкой."""
 BOAT_PRICE = 10000
+BELLS_PRICE = 200
 MIN_CATCH_SECONDS = 12
 
 def migrate(c):
     columns = {r[1] for r in c.execute('PRAGMA table_info(player)')}
     if 'boat_owned' not in columns:
         c.execute('ALTER TABLE player ADD COLUMN boat_owned INTEGER NOT NULL DEFAULT 0')
+    if 'bells_owned' not in columns:
+        c.execute('ALTER TABLE player ADD COLUMN bells_owned INTEGER NOT NULL DEFAULT 0')
     c.execute('''CREATE TABLE IF NOT EXISTS active_cast(
         id INTEGER PRIMARY KEY CHECK(id=1), location_id INTEGER NOT NULL,
         bait_id INTEGER NOT NULL, ready_at REAL NOT NULL)''')

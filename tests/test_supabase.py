@@ -83,7 +83,8 @@ class SupabaseTests(unittest.TestCase):
         api_fn = api[api.index('CREATE OR REPLACE FUNCTION'):].strip()
         migs = sorted((root / 'db/migrations').glob('[0-9][0-9][0-9]_*.sql'))
         self.assertEqual([m.name for m in migs],
-                         ['001_weighted_catch_price.sql', '002_boat_price_10000_and_spin_bait.sql'])
+                         ['001_weighted_catch_price.sql', '002_boat_price_10000_and_spin_bait.sql',
+                          '003_bells_200.sql'])
         last = migs[-1].read_text(encoding='utf-8')
         # заголовок-комментарий допускается; тело функции должно совпадать с api посимвольно
         self.assertIn(api_fn, last, 'последняя миграция устарела относительно db/supabase_api.sql')
@@ -93,3 +94,5 @@ class SupabaseTests(unittest.TestCase):
         self.assertNotIn("b.code='spin' AND random()", prev)       # блесна появилась только в 002
         self.assertIn('10 000', last)
         self.assertIn("b.code='spin' AND random()>=.25", last)
+        self.assertIn("d->>'item'='bells'", last)                  # колокольчики появились только в 003
+        self.assertNotIn("d->>'item'='bells'", migs[1].read_text(encoding='utf-8'))

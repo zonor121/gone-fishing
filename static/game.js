@@ -10,7 +10,7 @@ function waterPoint(distance) {
 }
 let L = {}, R = [], BL = [], B = {}, F = [];
 let M = 0, Q = {}, INV = [], tutDone = true, tut = -1;
-let boatOwned = false, boatPrice = 10000, minCatchSeconds = 12, castPending = false;
+let boatOwned = false, boatPrice = 10000, bellsOwned = false, bellsPrice = 200, minCatchSeconds = 12, castPending = false;
 const rub = n => n.toLocaleString('ru-RU');   // «10 000» — все суммы в интерфейсе через этот хелпер
 // состояния: idle, charge, fly, wait, bite, reel, res (карточка), out (забрать/отпустить)
 let S = 'idle', pw = 0, hold = 0, tm = 0, bx = 0, fish = null, w = 0, t = 0, d = 1;
@@ -29,7 +29,7 @@ async function boot() {
   cfg.locations.forEach(l => { L[l.code] = l; sl.add(new Option(l.name, l.code)); });
   R = cfg.rods; R.forEach((r, i) => sr.add(new Option(r.name, i)));
   BL = cfg.baits; BL.forEach(b => B[b.code] = b.name);
-  F = cfg.fish; boatPrice = cfg.boat_price; minCatchSeconds = cfg.min_catch_seconds;
+  F = cfg.fish; boatPrice = cfg.boat_price; bellsPrice = cfg.bells_price; minCatchSeconds = cfg.min_catch_seconds;
   if (cfg.world) {  // каталог времени суток и погоды — с сервера, единый источник
     DAY_PARTS = cfg.world.day_parts.map(p => p.code);
     cfg.world.day_parts.forEach(p => DAY_PART_NAMES[p.code] = p.name);
@@ -59,7 +59,7 @@ async function refresh() {
   const res = await fetch('/api/state');
   if (res.status === 401 && window.showAuth) { showAuth('login'); return; }   // сессия истекла
   const s = await res.json();
-  M = s.money; Q = s.baits; INV = s.inventory; tutDone = s.tutorial_done; boatOwned = s.boat_owned;
+  M = s.money; Q = s.baits; INV = s.inventory; tutDone = s.tutorial_done; boatOwned = s.boat_owned; bellsOwned = s.bells_owned;
   $('username').textContent = s.username || '';
   $('userbox').hidden = !s.username;
   setWorldState(s);
@@ -150,7 +150,7 @@ function update(dt) {
     cast += dt / .8;
     if (cast >= 1) { S = 'wait'; pick(); say(fish ? 'Ждём поклёвку…' : 'Тишина… возможно, эта наживка здесь не подходит.'); label(); }
   } else if (S === 'wait' && fish) {
-    tm -= dt; if (tm <= 0) { S = 'bite'; tm = 1.1; say('Поклёвка!'); label(); }
+    tm -= dt; if (tm <= 0) { S = 'bite'; tm = 2; say('Поклёвка!'); if (bellsOwned) bellChime(); label(); }
   } else if (S === 'bite') {
     tm -= dt; if (tm <= 0) end('Поклёвка пропущена — рыба ушла.', 1);
   } else if (S === 'reel') {
@@ -212,13 +212,19 @@ function renderShop() {
     const fl = F.filter(f => f.baits[b.code]).map(f => f.name).join(', ');
     return `<tr><td><b>${b.name}</b> — ${b.price} ₽<div class="fl">Ловится: ${fl}</div></td><td>в запасе: ${Q[b.code] || 0}</td>
       <td><button data-b="${b.code}" data-n="1">+1</button> <button data-b="${b.code}" data-n="10">+10</button></td></tr>`;
-  }).join('') + `</table><section class="boat-product"><div><h3>Лодка</h3><p>Откройте морскую рыбалку навсегда. Четыре новых вида рыб, открытая вода и ловля с лодки.</p><p class="boat-progress">${boatOwned ? 'Лодка приобретена · море открыто' : `Накоплено ${M.toLocaleString('ru-RU')} из ${rub(boatPrice)} ₽`}</p></div><button data-boat ${boatOwned ? 'disabled' : ''}>${boatOwned ? 'Уже куплена' : `Купить лодку · ${rub(boatPrice)} ₽`}</button></section>`;
+  }).join('') + `</table><section class="boat-product"><div><h3>Лодка</h3><p>Откройте морскую рыбалку навсегда. Четыре новых вида рыб, открытая вода и ловля с лодки.</p><p class="boat-progress">${boatOwned ? 'Лодка приобретена · море открыто' : `Накоплено ${M.toLocaleString('ru-RU')} из ${rub(boatPrice)} ₽`}</p></div><button data-boat ${boatOwned ? 'disabled' : ''}>${boatOwned ? 'Уже куплена' : `Купить лодку · ${rub(boatPrice)} ₽`}</button></section><section class="boat-product"><div><h3>Колокольчики</h3><p>Звон при каждой поклёвке — подсечку не пропустите. Работает во всех локациях, покупка навсегда.</p><p class="boat-progress">${bellsOwned ? 'Колокольчики приобретены · звон включён' : `Накоплено ${M.toLocaleString('ru-RU')} из ${rub(bellsPrice)} ₽`}</p></div><button data-bells ${bellsOwned ? 'disabled' : ''}>${bellsOwned ? 'Уже куплены' : `Купить колокольчики · ${rub(bellsPrice)} ₽`}</button></section>`;
 }
 $('shopbody').onclick = async e => {
   if (e.target.closest('[data-boat]')) {
     e.target.disabled = true;
     const r = await post('/api/buy', {item: 'boat'}).catch(() => ({}));
     $('shopmsg').textContent = r.ok ? 'Лодка приобретена! Морская рыбалка открыта навсегда.' : (r.error || 'Нет связи с сервером. Повторите покупку.');
+    await refresh(); renderShop(); return;
+  }
+  if (e.target.closest('[data-bells]')) {
+    e.target.disabled = true;
+    const r = await post('/api/buy', {item: 'bells'}).catch(() => ({}));
+    $('shopmsg').textContent = r.ok ? 'Колокольчики приобретены! Теперь поклёвка сопровождается звоном.' : (r.error || 'Нет связи с сервером. Повторите покупку.');
     await refresh(); renderShop(); return;
   }
   const b = e.target.dataset.b; if (!b) return;
@@ -228,7 +234,7 @@ $('shopbody').onclick = async e => {
 };
 $('bshop').onclick = () => { $('shopmsg').textContent = ''; renderShop(); modal('shop', 1); };
 function renderInv() {
-  $('invbody').innerHTML = `<h3>Лодка</h3><p>${boatOwned ? 'В собственности · морская рыбалка открыта навсегда' : `Не приобретена · ${rub(boatPrice)} ₽ в магазине`}</p><h3>Удочки</h3><table>` + R.map((r, i) =>
+  $('invbody').innerHTML = `<h3>Лодка</h3><p>${boatOwned ? 'В собственности · морская рыбалка открыта навсегда' : `Не приобретена · ${rub(boatPrice)} ₽ в магазине`}</p><h3>Колокольчики</h3><p>${bellsOwned ? 'В собственности · звон при каждой поклёвке' : `Не приобретены · ${rub(bellsPrice)} ₽ в магазине`}</p><h3>Удочки</h3><table>` + R.map((r, i) =>
     `<tr><td>${r.name}</td><td class="fl">дальность ${r.rng}, прочность ×${r.str}, скорость ×${r.spd}</td>
      <td>${+sr.value === i ? 'выбрана' : `<button data-r="${i}" ${sr.disabled ? 'disabled' : ''}>Выбрать</button>`}</td></tr>`).join('') +
     '</table><h3>Наживка</h3><table>' + BL.map(b =>
@@ -247,8 +253,11 @@ $('binv').onclick = () => { renderInv(); modal('inv', 1); };
 function rodTip() {
   const bend = S === 'reel' ? t * 65 : 0;
   const back = S === 'charge' ? pw : S === 'fly' ? Math.max(0, 1-cast*4) * pw : 0;
-  const sway = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : Math.sin(tt*1.4)*1.3;
-  return [448 + back*110 + bend*.35 + sway, 150 - back*115 + bend + sway];
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const sway = reduce ? 0 : Math.sin(tt*1.4)*1.3;
+  const twitch = !reduce && S === 'bite' ? Math.sin(tt*30)*1.6*Math.max(0, tm/2) : 0;
+  const jerk = !reduce && S === 'reel' && sd > 0 ? sd*7 : 0;
+  return [448 + back*110 + bend*.35 + sway + jerk*.6 + twitch, 150 - back*115 + bend + sway + jerk + twitch*.6];
 }
 function bar(x, y, wd, v, lab, col, dz) {
   g.fillStyle = 'rgba(0,0,0,.4)'; g.fillRect(x, y, wd, 16);
@@ -292,7 +301,11 @@ function draw() {
     for(let i=0;i<(S==='fly'?0:2);i++){const r=6+((time*9+i*12)%24);g.beginPath();g.ellipse(px,py+5,r*scale,r*scale*.22,0,0,7);g.stroke();}
     g.strokeStyle=S==='reel'&&t>.8?'#ff8b72':'rgba(246,244,218,.85)';g.lineWidth=.9;
     g.beginPath();g.moveTo(tx,ty);g.quadraticCurveTo((tx+px)/2,(ty+py)/2+(S==='reel'?(1-t)*28:20),px,py);g.stroke();
-    if(S==='reel'||S==='res'){g.save();g.translate(px,py);g.scale(scale,scale);drawFish(0,0);g.restore();}
+    if(S==='reel'&&sd>0){g.strokeStyle='rgba(233,244,226,.7)';g.lineWidth=1.2;
+      for(let i=0;i<3;i++){const a=-Math.PI/2+(i-1)*.55,r=(9+sd*12)*scale;
+        g.beginPath();g.moveTo(px+Math.cos(a)*r*.35,py+Math.sin(a)*r*.35);g.lineTo(px+Math.cos(a)*r,py+Math.sin(a)*r);g.stroke();}}
+    // Рыба видна только когда её вытащили: карточка улова и анимация «забрать/отпустить».
+    if(S==='res'){g.save();g.translate(px,py);g.scale(scale,scale);drawFish(0,0);g.restore();}
     else {g.save();g.translate(px,py);g.scale(scale,scale);g.strokeStyle='#eee5c8';g.lineWidth=1;g.beginPath();g.moveTo(0,-12);g.lineTo(0,4);g.stroke();g.fillStyle='#ef613f';g.beginPath();g.ellipse(0,-5,3,6,0,0,7);g.fill();g.fillStyle='#f0e8cd';g.fillRect(-2,-2,4,4);g.restore();}
   } else if(S!=='out'){
     g.strokeStyle='rgba(246,244,218,.8)';g.lineWidth=.8;g.beginPath();g.moveTo(tx,ty);g.lineTo(tx+3,ty+38);g.stroke();

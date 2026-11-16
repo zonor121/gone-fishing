@@ -133,8 +133,12 @@ function currentViewName() {
 // ---------- эффекты погоды и времени суток на сцене ----------
 function dayTint(g2) {
   const part = currentDayPart();
-  const tints = { morning: 'rgba(255,220,150,.09)', day: null, evening: 'rgba(255,140,60,.11)', night: 'rgba(14,26,58,.38)' };
+  // Пейзаж уже освещён палитрой (scenery.js); лёгкий слой лишь согласует передний план.
+  const tints = { morning: 'rgba(255,220,150,.05)', day: null, evening: 'rgba(255,140,60,.08)', night: 'rgba(10,18,44,.22)' };
   if (tints[part]) { g2.fillStyle = tints[part]; g2.fillRect(0, 0, 800, 420); }
+  const v = g2.createRadialGradient(400, 210, 180, 400, 210, 520);
+  v.addColorStop(0, 'rgba(8,14,18,0)'); v.addColorStop(1, 'rgba(8,14,18,.22)');
+  g2.fillStyle = v; g2.fillRect(0, 0, 800, 420);
 }
 function drawWeatherEffects(g2, time2) {
   const wx = currentWeather(), part = currentDayPart();
@@ -145,7 +149,7 @@ function drawWeatherEffects(g2, time2) {
       g2.beginPath(); g2.moveTo(x, y); g2.lineTo(x - 4, y + 13); g2.stroke();
     }
     g2.strokeStyle = 'rgba(210,230,240,.30)';
-    for (let i = 0; i < 14; i++) {
+    for (let i = 0; i < 22; i++) {
       const x = (noise(i + 950) * 800 + time2 * 24) % 800, y = 195 + noise(i + 960) * 210, r = 2 + ((time2 * 14 + i * 9) % 16);
       g2.beginPath(); g2.ellipse(x, y, r, r * .3, 0, 0, 7); g2.stroke();
     }

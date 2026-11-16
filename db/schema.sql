@@ -35,7 +35,8 @@ CREATE TABLE player(                             -- деньги и флаги: 
   user_id INTEGER PRIMARY KEY REFERENCES user(id) ON DELETE CASCADE,
   money INTEGER NOT NULL DEFAULT 200,
   tutorial_done INTEGER NOT NULL DEFAULT 0,
-  boat_owned INTEGER NOT NULL DEFAULT 0);
+  boat_owned INTEGER NOT NULL DEFAULT 0,
+  bells_owned INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE player_bait(                        -- запас наживки на аккаунт
   user_id INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE,
   bait_id INTEGER NOT NULL REFERENCES bait(id),
