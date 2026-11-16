@@ -14,7 +14,8 @@ CREATE TABLE fish(
   min_kg REAL NOT NULL, max_kg REAL NOT NULL,
   bite_freq REAL NOT NULL, resistance REAL NOT NULL, color TEXT,
   price INTEGER NOT NULL,                        -- 50, 100, 150, ... ₽
-  times TEXT, weather TEXT);                     -- CSV частей суток / погод; NULL — клюёт всегда
+  times TEXT, weather TEXT,                      -- CSV частей суток / погод; NULL — клюёт всегда
+  fight_style TEXT);                             -- calm/dart/heavy/diver — характер вываживания
 CREATE TABLE fish_location(
   fish_id INTEGER REFERENCES fish(id), location_id INTEGER REFERENCES location(id),
   PRIMARY KEY(fish_id,location_id));
@@ -36,7 +37,8 @@ CREATE TABLE player(                             -- деньги и флаги: 
   money INTEGER NOT NULL DEFAULT 200,
   tutorial_done INTEGER NOT NULL DEFAULT 0,
   boat_owned INTEGER NOT NULL DEFAULT 0,
-  bells_owned INTEGER NOT NULL DEFAULT 0);
+  bells_owned INTEGER NOT NULL DEFAULT 0,
+  rod_level INTEGER NOT NULL DEFAULT 1);         -- id старшей купленной удочки (1 = бамбуковая)
 CREATE TABLE player_bait(                        -- запас наживки на аккаунт
   user_id INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE,
   bait_id INTEGER NOT NULL REFERENCES bait(id),
@@ -50,6 +52,7 @@ CREATE TABLE catch(                              -- улов; kept=1 — леж�
   weight_kg REAL NOT NULL, kept INTEGER NOT NULL,
   price INTEGER NOT NULL DEFAULT 0,              -- начислено денег (0, если отпущена)
   bait_id INTEGER,                               -- приманка заброса (для заданий)
+  trophy INTEGER NOT NULL DEFAULT 0,             -- трофей: вес выше max_kg, цена ×2
   caught_at TEXT NOT NULL DEFAULT (datetime('now')));
 CREATE TABLE world_state(                        -- погода мира; общая для всех игроков
   id INTEGER PRIMARY KEY CHECK(id=1),

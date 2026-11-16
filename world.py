@@ -17,17 +17,27 @@ WEATHER_MIN_SECONDS, WEATHER_MAX_SECONDS = 120, 240
 # Блесна расходуется не с каждого заброса: шанс потратить её за один заброс.
 SPIN_BAIT_SPEND_CHANCE = 0.25
 
+# Трофеи: редкий шанс (ролл на клиенте) поймать экземпляр выше max_kg;
+# сервер принимает вес до max_kg × TROPHY_MAX_MULT только с флагом trophy, цена ×2.
+TROPHY_CHANCE = 0.04
+TROPHY_MAX_MULT = 1.5
+TROPHY_PRICE_MULT = 2
+
 # Новые виды: налим клюёт только ночью, форель — только в дождь.
 # Цена налима 300 ₽: экономики 200 + 15×300 за 3 минуты должно не хватать на лодку.
 NEW_FISH = [
-    (11, 'Налим', 1.0, 7.0, 1.2, 0.80, '#7d8a6e', 300, 'night', None),
-    (12, 'Форель', 0.5, 4.0, 1.8, 0.62, '#8fa8b8', 350, None, 'rain'),
+    (11, 'Налим', 1.0, 7.0, 1.2, 0.80, '#7d8a6e', 300, 'night', None, 'diver'),
+    (12, 'Форель', 0.5, 4.0, 1.8, 0.62, '#8fa8b8', 350, None, 'rain', 'dart'),
 ]
 NEW_FISH_LOCATION = [(11, 1), (11, 2), (12, 2), (12, 3)]
 NEW_FISH_BAIT = [(11, 2, 1), (11, 1, .7), (11, 4, .5), (12, 4, 1), (12, 2, .5), (12, 1, .4)]
 
 # Мягкие ограничения существующих видов: id → части суток.
 EXISTING_FISH_TIMES = {3: 'morning,evening', 5: 'morning,day', 10: 'day'}  # окунь, плотва, тунец
+
+# Характер вываживания существующих видов (морские — в sea.py).
+FISH_STYLES = {1: 'calm', 2: 'heavy', 3: 'calm', 4: 'dart', 5: 'calm', 6: 'heavy',
+               11: 'diver', 12: 'dart'}
 
 # Каталог ежедневных заданий: (kind, target, goal, text, money, bait_code, bait_qty)
 QUEST_POOL = [
@@ -48,6 +58,7 @@ ACHIEVEMENTS = [
     ('hundred', '100 пойманных рыб', 'Поймать суммарно 100 рыб.'),
     ('sea_master', 'Мастер моря', 'Поймать тунца — самую крупную морскую рыбу.'),
     ('collector', 'Коллекционер', 'Поймать все виды рыб в игре.'),
+    ('trophy', 'Трофейщик', 'Поймать трофейную рыбу.'),
 ]
 
 
@@ -57,9 +68,13 @@ def migrate(c):
     if 'times' not in cols:
         c.execute('ALTER TABLE fish ADD COLUMN times TEXT')     # CSV частей суток; NULL — всегда
         c.execute('ALTER TABLE fish ADD COLUMN weather TEXT')   # CSV погод; NULL — всегда
+    if 'fight_style' not in cols:
+        c.execute('ALTER TABLE fish ADD COLUMN fight_style TEXT')
     cols = {r[1] for r in c.execute('PRAGMA table_info(catch)')}
     if 'bait_id' not in cols:
         c.execute('ALTER TABLE catch ADD COLUMN bait_id INTEGER')  # приманка заброса, для заданий
+    if 'trophy' not in cols:
+        c.execute('ALTER TABLE catch ADD COLUMN trophy INTEGER NOT NULL DEFAULT 0')
     c.execute('''CREATE TABLE IF NOT EXISTS world_state(
         id INTEGER PRIMARY KEY CHECK(id=1),
         weather TEXT NOT NULL DEFAULT 'clear', weather_until REAL)''')
@@ -72,11 +87,14 @@ def migrate(c):
     c.execute('''CREATE TABLE IF NOT EXISTS achievement(
         code TEXT PRIMARY KEY, unlocked_at TEXT NOT NULL)''')
     c.execute("INSERT OR IGNORE INTO world_state VALUES (1,'clear',0)")
-    c.executemany('INSERT OR IGNORE INTO fish VALUES (?,?,?,?,?,?,?,?,?,?)', NEW_FISH)
+    c.executemany('''INSERT OR IGNORE INTO fish(id,name,min_kg,max_kg,bite_freq,resistance,color,price,times,weather,fight_style)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?)''', NEW_FISH)
     c.executemany('INSERT OR IGNORE INTO fish_location VALUES (?,?)', NEW_FISH_LOCATION)
     c.executemany('INSERT OR IGNORE INTO fish_bait VALUES (?,?,?)', NEW_FISH_BAIT)
     for fish_id, times in EXISTING_FISH_TIMES.items():
         c.execute('UPDATE fish SET times=? WHERE id=? AND times IS NULL', (times, fish_id))
+    for fish_id, style in FISH_STYLES.items():
+        c.execute('UPDATE fish SET fight_style=? WHERE id=? AND fight_style IS NULL', (style, fish_id))
     c.commit()
 
 
@@ -152,6 +170,7 @@ def check_achievements(c, uid):
     all_species = c.execute('SELECT COUNT(*) FROM fish').fetchone()[0]
     tuna = c.execute('SELECT 1 FROM catch WHERE fish_id=? AND user_id=? LIMIT 1',
                      (SEA_MASTER_FISH_ID, uid)).fetchone()
+    trophy = c.execute('SELECT 1 FROM catch WHERE trophy=1 AND user_id=? LIMIT 1', (uid,)).fetchone()
     have = {r['code'] for r in c.execute('SELECT code FROM achievement WHERE user_id=?', (uid,))}
     unlocked = []
 
@@ -169,6 +188,8 @@ def check_achievements(c, uid):
         try_unlock('sea_master')
     if species >= all_species:
         try_unlock('collector')
+    if trophy:
+        try_unlock('trophy')
     return unlocked
 
 
@@ -176,7 +197,7 @@ def check_achievements(c, uid):
 def diary(c, uid):
     """Статистика рыбалки игрока uid: суммарный улов, рекорд, счётчики и открытые виды."""
     total = c.execute('SELECT COUNT(*) FROM catch WHERE user_id=?', (uid,)).fetchone()[0]
-    best = c.execute('''SELECT f.name fish, c.weight_kg weight FROM catch c
+    best = c.execute('''SELECT f.name fish, c.weight_kg weight, c.trophy FROM catch c
         JOIN fish f ON f.id=c.fish_id WHERE c.user_id=?
         ORDER BY c.weight_kg DESC LIMIT 1''', (uid,)).fetchone()
     species = [{'id': r['id'], 'name': r['name'], 'n': r['n'], 'best': r['best']}
@@ -184,7 +205,7 @@ def diary(c, uid):
                    FROM catch c JOIN fish f ON f.id=c.fish_id WHERE c.user_id=?
                    GROUP BY f.id ORDER BY f.price''', (uid,))]
     return {'total': total,
-            'heaviest': {'name': best['fish'], 'weight': best['weight']} if best else None,
+            'heaviest': {'name': best['fish'], 'weight': best['weight'], 'trophy': bool(best['trophy'])} if best else None,
             'species': species,
             'species_total': c.execute('SELECT COUNT(*) FROM fish').fetchone()[0],
             'discovered': len(species)}

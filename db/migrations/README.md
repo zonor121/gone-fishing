@@ -19,7 +19,7 @@ Supabase-проектов. Свежая установка может сразу
 
 1. Supabase Dashboard → **SQL Editor** → New query.
 2. Вставьте содержимое `001_weighted_catch_price.sql` → **Run** (ожидается `Success. No rows returned`).
-3. Повторите для `002_boat_price_10000_and_spin_bait.sql`, `003_bells_200.sql` и `004_leaderboard.sql`.
+3. Повторите для `002_boat_price_10000_and_spin_bait.sql`, `003_bells_200.sql`, `004_leaderboard.sql` и `005_fight_styles_rods_trophies.sql`.
 4. Проверка: `SELECT fishing_api('health');` → `{"ok":true}`.
 
 Альтернатива — Supabase CLI: `supabase db execute -f db/migrations/001_weighted_catch_price.sql`
@@ -34,3 +34,4 @@ Supabase-проектов. Свежая установка может сразу
 | 2 | `002_boat_price_10000_and_spin_bait.sql` | Лодка подорожала до 10 000 ₽ (проверка, списание, сообщения, `boat_price` в конфиге). Блесна расходуется только в 25% забросов: `random() < 0.25`; ответ `cast` содержит `bait_kept=true`, когда наживка не потрачена. |
 | 3 | `003_bells_200.sql` | Колокольчики за 200 ₽: колонка `player.bells_owned`, `buy` с `item='bells'` (409 при повторе, 400 при нехватке денег), `bells_owned` в `state`, `bells_price=200` в `config`. Звон при поклёвке — на клиенте. |
 | 4 | `004_leaderboard.sql` | Лидерборд «Рекорды»: `action='leaderboard'` — топ-10 по весу каждого вида (все уловы, лучший на игрока) и топ-10 по стоимости одиночной рыбы (`kept=1`). Таблицы не меняются. До применения этой миграции `GET /api/leaderboard` на Supabase возвращает 503. |
+| 5 | `005_fight_styles_rods_trophies.sql` | Стили вываживания (`fish.fight_style`: calm/dart/heavy/diver), магазин удочек (`player.rod_level`, `buy item='rod'`: Спиннинг 1 200 ₽ → Карбон 4 500 ₽, последовательно), трофеи (`catch.trophy`: вес до `max_kg×1.5` с флагом `trophy`, цена ×2, достижение «Трофейщик»). Конфиг: `style` у рыб, `rod_prices`, `trophy_chance=0.04`; состояние: `rod_level`, трофей-метки в `last`/`diary`. До применения клиент играет по-старому (все удочки доступны, трофеи не роллятся). |

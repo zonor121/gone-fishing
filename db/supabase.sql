@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS fish(
   min_kg DOUBLE PRECISION NOT NULL, max_kg DOUBLE PRECISION NOT NULL,
   bite_freq DOUBLE PRECISION NOT NULL, resistance DOUBLE PRECISION NOT NULL, color TEXT,
   price INTEGER NOT NULL,                        
-  times TEXT, weather TEXT);                     
+  times TEXT, weather TEXT,                      
+  fight_style TEXT);                             
 CREATE TABLE IF NOT EXISTS fish_location(
   fish_id INTEGER REFERENCES fish(id), location_id INTEGER REFERENCES location(id),
   PRIMARY KEY(fish_id,location_id));
@@ -37,7 +38,8 @@ CREATE TABLE IF NOT EXISTS player(
   money INTEGER NOT NULL DEFAULT 200,
   tutorial_done INTEGER NOT NULL DEFAULT 0,
   boat_owned INTEGER NOT NULL DEFAULT 0,
-  bells_owned INTEGER NOT NULL DEFAULT 0);
+  bells_owned INTEGER NOT NULL DEFAULT 0,
+  rod_level INTEGER NOT NULL DEFAULT 1);         
 CREATE TABLE IF NOT EXISTS player_bait(                        
   user_id INTEGER NOT NULL REFERENCES fishing_user(id) ON DELETE CASCADE,
   bait_id INTEGER NOT NULL REFERENCES bait(id),
@@ -51,6 +53,7 @@ CREATE TABLE IF NOT EXISTS catch(
   weight_kg DOUBLE PRECISION NOT NULL, kept INTEGER NOT NULL,
   price INTEGER NOT NULL DEFAULT 0,              
   bait_id INTEGER,                               
+  trophy INTEGER NOT NULL DEFAULT 0,             
   caught_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')));
 CREATE TABLE IF NOT EXISTS world_state(                        
   id INTEGER PRIMARY KEY CHECK(id=1),
@@ -82,13 +85,14 @@ INSERT INTO bait(id,code,name,price) VALUES
 (1,'worm','Червь',10),(2,'maggot','Опарыш',30),(3,'corn','Кукуруза',60),(4,'spin','Блесна',100) ON CONFLICT DO NOTHING;
 
 
-INSERT INTO fish(id,name,min_kg,max_kg,bite_freq,resistance,color,price,times,weather) VALUES
-(1,'Карась',0.3,1.2,3,0.30,'#d8a23a',100,NULL,NULL),(2,'Карп',1,8,1.5,0.75,'#a9733b',250,NULL,NULL),
-(3,'Окунь',0.2,1.5,2,0.40,'#6a9a3c',150,'morning,evening',NULL),
-(4,'Щука',1,9,1,0.90,'#4f7d4a',300,NULL,NULL),
-(5,'Плотва',0.1,0.7,3,0.20,'#b8c4cc',50,'morning,day',NULL),(6,'Лещ',0.5,4,1.5,0.50,'#c9b27a',200,NULL,NULL),
-(11,'Налим',1,7,1.2,0.80,'#7d8a6e',300,'night',NULL),        
-(12,'Форель',0.5,4,1.8,0.62,'#8fa8b8',350,NULL,'rain') ON CONFLICT DO NOTHING;      
+
+INSERT INTO fish(id,name,min_kg,max_kg,bite_freq,resistance,color,price,times,weather,fight_style) VALUES
+(1,'Карась',0.3,1.2,3,0.30,'#d8a23a',100,NULL,NULL,'calm'),(2,'Карп',1,8,1.5,0.75,'#a9733b',250,NULL,NULL,'heavy'),
+(3,'Окунь',0.2,1.5,2,0.40,'#6a9a3c',150,'morning,evening',NULL,'calm'),
+(4,'Щука',1,9,1,0.90,'#4f7d4a',300,NULL,NULL,'dart'),
+(5,'Плотва',0.1,0.7,3,0.20,'#b8c4cc',50,'morning,day',NULL,'calm'),(6,'Лещ',0.5,4,1.5,0.50,'#c9b27a',200,NULL,NULL,'heavy'),
+(11,'Налим',1,7,1.2,0.80,'#7d8a6e',300,'night',NULL,'diver'),        
+(12,'Форель',0.5,4,1.8,0.62,'#8fa8b8',350,NULL,'rain','dart') ON CONFLICT DO NOTHING;      
 INSERT INTO fish_location VALUES (1,1),(1,3),(2,1),(2,2),(3,1),(3,2),(3,3),(4,1),(4,2),(5,1),(5,2),(5,3),(6,1),(6,2),
 (11,1),(11,2),(12,2),(12,3) ON CONFLICT DO NOTHING;
 
@@ -105,10 +109,10 @@ INSERT INTO world_state VALUES (1,'clear',0) ON CONFLICT DO NOTHING;
 
 INSERT INTO location VALUES (4,'sea','Морская рыбалка','#7daec9','#e8eee9','#367e9e','#123e60',0,0) ON CONFLICT DO NOTHING;
 INSERT INTO bait VALUES (5,'shrimp','Креветка',80) ON CONFLICT DO NOTHING;
-INSERT INTO fish VALUES (7,'Скумбрия',0.4,2.0,2.5,0.45,'#79abb5',240,NULL,NULL) ON CONFLICT DO NOTHING;
-INSERT INTO fish VALUES (8,'Треска',1.0,7.0,1.6,0.72,'#a29b76',420,NULL,NULL) ON CONFLICT DO NOTHING;
-INSERT INTO fish VALUES (9,'Морской окунь',0.5,3.5,2.0,0.58,'#d18369',320,NULL,NULL) ON CONFLICT DO NOTHING;
-INSERT INTO fish VALUES (10,'Тунец',3.0,15.0,0.65,0.95,'#537e9a',700,'day',NULL) ON CONFLICT DO NOTHING;
+INSERT INTO fish VALUES (7,'Скумбрия',0.4,2.0,2.5,0.45,'#79abb5',240,NULL,NULL,'dart') ON CONFLICT DO NOTHING;
+INSERT INTO fish VALUES (8,'Треска',1.0,7.0,1.6,0.72,'#a29b76',420,NULL,NULL,'heavy') ON CONFLICT DO NOTHING;
+INSERT INTO fish VALUES (9,'Морской окунь',0.5,3.5,2.0,0.58,'#d18369',320,NULL,NULL,'dart') ON CONFLICT DO NOTHING;
+INSERT INTO fish VALUES (10,'Тунец',3.0,15.0,0.65,0.95,'#537e9a',700,'day',NULL,'dart') ON CONFLICT DO NOTHING;
 INSERT INTO fish_location VALUES (7,4) ON CONFLICT DO NOTHING;
 INSERT INTO fish_location VALUES (8,4) ON CONFLICT DO NOTHING;
 INSERT INTO fish_location VALUES (9,4) ON CONFLICT DO NOTHING;
@@ -176,6 +180,7 @@ DECLARE
  p player%ROWTYPE; a active_cast%ROWTYPE; f fish%ROWTYPE; b bait%ROWTYPE;
  l location%ROWTYPE; q quest%ROWTYPE; r record;
  n integer; w numeric; price_value integer; kept_value integer; bait_kept boolean;
+ trophy_value integer; rod_price integer; next_rod integer;
  now_value double precision := extract(epoch from clock_timestamp());
  today text := to_char(current_timestamp AT TIME ZONE 'UTC','YYYY-MM-DD');
  weather_value text; until_value double precision; codes jsonb := '[]';
@@ -203,13 +208,14 @@ BEGIN
  ELSIF action='config' THEN
   RETURN jsonb_build_object(
    'locations',(SELECT jsonb_agg(jsonb_build_object('id',id,'code',code,'name',name,'sky',jsonb_build_array(sky_top,sky_bottom),'water',jsonb_build_array(water_top,water_bottom),'current',has_current=1,'forest',has_forest=1) ORDER BY id) FROM location),
-   'rods',(SELECT jsonb_agg(jsonb_build_object('id',id,'name',name,'rng',max_range,'str',strength,'spd',reel_speed) ORDER BY id) FROM rod),
+   'rods',(SELECT jsonb_agg(jsonb_build_object('id',id,'name',name,'rng',max_range,'str',strength,'spd',reel_speed,'price',CASE id WHEN 2 THEN 1200 WHEN 3 THEN 4500 ELSE 0 END) ORDER BY id) FROM rod),
    'baits',(SELECT jsonb_agg(jsonb_build_object('id',id,'code',code,'name',name,'price',price) ORDER BY price) FROM bait),
-   'fish',(SELECT jsonb_agg(jsonb_build_object('id',x.id,'name',x.name,'min',min_kg,'max',max_kg,'freq',bite_freq,'res',resistance,'color',color,'price',x.price,
+   'fish',(SELECT jsonb_agg(jsonb_build_object('id',x.id,'name',x.name,'min',min_kg,'max',max_kg,'freq',bite_freq,'res',resistance,'color',color,'price',x.price,'style',fight_style,
      'times',string_to_array(times,','),'weather',string_to_array(weather,','),
      'locs',(SELECT jsonb_agg(l.code ORDER BY l.id) FROM fish_location fl JOIN location l ON l.id=fl.location_id WHERE fl.fish_id=x.id),
      'baits',(SELECT jsonb_object_agg(b.code,fb.bite_weight) FROM fish_bait fb JOIN bait b ON b.id=fb.bait_id WHERE fb.fish_id=x.id)) ORDER BY x.price) FROM fish x),
    'boat_price',10000,'bells_price',200,'min_catch_seconds',12,
+   'rod_prices','{"2":1200,"3":4500}'::jsonb,'trophy_chance',0.04,
    'world','{"day_parts":[{"code":"morning","name":"Утро"},{"code":"day","name":"День"},{"code":"evening","name":"Вечер"},{"code":"night","name":"Ночь"}],"day_part_seconds":180,"weathers":[{"code":"clear","name":"Ясно"},{"code":"rain","name":"Дождь"},{"code":"fog","name":"Туман"},{"code":"wind","name":"Ветер"}]}'::jsonb);
  END IF;
  -- Every per-player operation takes the same lock, including state/quest generation.
@@ -235,16 +241,16 @@ BEGIN
     ('bait','worm',2,'Поймать 2 рыбы на червя',180,'maggot',4)
    ) v(kind,target,goal,text,money,bait,qty) WHERE v.kind<>'sea' OR p.boat_owned=1 ORDER BY random() LIMIT 3;
   END IF;
-  RETURN jsonb_build_object('username',(SELECT username FROM fishing_user WHERE id=u),'money',p.money,'tutorial_done',p.tutorial_done=1,'boat_owned',p.boat_owned=1,'bells_owned',p.bells_owned=1,
+  RETURN jsonb_build_object('username',(SELECT username FROM fishing_user WHERE id=u),'money',p.money,'tutorial_done',p.tutorial_done=1,'boat_owned',p.boat_owned=1,'bells_owned',p.bells_owned=1,'rod_level',p.rod_level,
    'baits',coalesce((SELECT jsonb_object_agg(b.code,pb.qty) FROM player_bait pb JOIN bait b ON b.id=pb.bait_id WHERE pb.user_id=u),'{}'),
    'inventory',coalesce((SELECT jsonb_agg(to_jsonb(x)-'sort_price' ORDER BY sort_price) FROM (SELECT f.name,count(*) n,round(sum(c.weight_kg)::numeric,2) kg,max(c.weight_kg) best,sum(c.price) earned,f.price sort_price FROM catch c JOIN fish f ON f.id=c.fish_id WHERE c.user_id=u AND c.kept=1 GROUP BY f.id) x),'[]'),
-   'last',coalesce((SELECT jsonb_agg(to_jsonb(x)-'id' ORDER BY id DESC) FROM (SELECT c.id,f.name fish,l.name location,c.weight_kg weight,c.kept,c.price,c.caught_at FROM catch c JOIN fish f ON f.id=c.fish_id JOIN location l ON l.id=c.location_id WHERE c.user_id=u ORDER BY c.id DESC LIMIT 8) x),'[]'),
+   'last',coalesce((SELECT jsonb_agg(to_jsonb(x)-'id' ORDER BY id DESC) FROM (SELECT c.id,f.name fish,l.name location,c.weight_kg weight,c.kept,c.price,c.trophy,c.caught_at FROM catch c JOIN fish f ON f.id=c.fish_id JOIN location l ON l.id=c.location_id WHERE c.user_id=u ORDER BY c.id DESC LIMIT 8) x),'[]'),
    'world',jsonb_build_object('day_part',(ARRAY['morning','day','evening','night'])[mod(floor(now_value/180)::bigint,4)::integer+1],'day_part_left',180-floor(mod(now_value::numeric,180)),'weather',weather_value,'weather_left',greatest(0,floor(until_value-now_value))),
    'quests',coalesce((SELECT jsonb_agg(jsonb_build_object('id',id,'text',text,'goal',goal,'progress',progress,'claimed',claimed=1,'reward',jsonb_build_object('money',reward_money,'bait',reward_bait,'bait_qty',reward_bait_qty)) ORDER BY id) FROM quest WHERE user_id=u),'[]'),
    'achievements',(SELECT jsonb_agg(jsonb_build_object('code',v.code,'name',v.name,'hint',v.hint,'unlocked_at',a.unlocked_at) ORDER BY v.ord) FROM (VALUES
-    (1,'first_catch','Первый улов','Поймать первую рыбу.'),(2,'hundred','100 пойманных рыб','Поймать суммарно 100 рыб.'),(3,'sea_master','Мастер моря','Поймать тунца — самую крупную морскую рыбу.'),(4,'collector','Коллекционер','Поймать все виды рыб в игре.')) v(ord,code,name,hint) LEFT JOIN achievement a ON a.user_id=u AND a.code=v.code),
+    (1,'first_catch','Первый улов','Поймать первую рыбу.'),(2,'hundred','100 пойманных рыб','Поймать суммарно 100 рыб.'),(3,'sea_master','Мастер моря','Поймать тунца — самую крупную морскую рыбу.'),(4,'collector','Коллекционер','Поймать все виды рыб в игре.'),(5,'trophy','Трофейщик','Поймать трофейную рыбу.')) v(ord,code,name,hint) LEFT JOIN achievement a ON a.user_id=u AND a.code=v.code),
    'diary',jsonb_build_object('total',(SELECT count(*) FROM catch WHERE user_id=u),
-    'heaviest',(SELECT jsonb_build_object('name',f.name,'weight',c.weight_kg) FROM catch c JOIN fish f ON f.id=c.fish_id WHERE c.user_id=u ORDER BY c.weight_kg DESC,c.id LIMIT 1),
+    'heaviest',(SELECT jsonb_build_object('name',f.name,'weight',c.weight_kg,'trophy',c.trophy=1) FROM catch c JOIN fish f ON f.id=c.fish_id WHERE c.user_id=u ORDER BY c.weight_kg DESC,c.id LIMIT 1),
     'species',coalesce((SELECT jsonb_agg(to_jsonb(x)-'sort_price' ORDER BY sort_price) FROM (SELECT f.id,f.name,count(*) n,max(c.weight_kg) best,f.price sort_price FROM catch c JOIN fish f ON f.id=c.fish_id WHERE c.user_id=u GROUP BY f.id) x),'[]'),
     'species_total',(SELECT count(*) FROM fish),'discovered',(SELECT count(DISTINCT fish_id) FROM catch WHERE user_id=u)));
  ELSIF action='leaderboard' THEN
@@ -278,6 +284,14 @@ BEGIN
    IF p.bells_owned=1 THEN RETURN '{"status":409,"body":{"ok":false,"error":"Колокольчики уже приобретены"}}'; END IF;
    IF p.money<200 THEN RAISE EXCEPTION 'Не хватает денег: колокольчики стоят 200 ₽.' USING ERRCODE='P0001'; END IF;
    UPDATE player SET money=money-200,bells_owned=1 WHERE user_id=u;
+  ELSIF d->>'item'='rod' THEN
+   -- последовательный апгрейд: купить можно только следующую удочку (rod_level+1)
+   SELECT max(id) INTO n FROM rod;
+   IF p.rod_level>=n THEN RETURN '{"status":409,"body":{"ok":false,"error":"Все удочки уже приобретены"}}'; END IF;
+   next_rod:=p.rod_level+1;
+   rod_price:=CASE next_rod WHEN 2 THEN 1200 WHEN 3 THEN 4500 ELSE 0 END;
+   IF rod_price=0 OR p.money<rod_price THEN RAISE EXCEPTION 'Не хватает денег: удочка стоит % ₽.', rod_price USING ERRCODE='P0001'; END IF;
+   UPDATE player SET money=money-rod_price,rod_level=next_rod WHERE user_id=u;
   ELSE
    SELECT * INTO b FROM bait WHERE code=d->>'bait';
    IF b.id IS NULL OR n NOT BETWEEN 1 AND 99 OR p.money<b.price::bigint*n THEN RAISE EXCEPTION 'Не хватает денег' USING ERRCODE='P0001'; END IF;
@@ -293,12 +307,15 @@ BEGIN
    OR NOT EXISTS(SELECT 1 FROM fish_bait WHERE fish_id=f.id AND bait_id=a.bait_id) THEN
    RAISE EXCEPTION 'Улов не соответствует забросу или рыбалка ещё не завершена.' USING ERRCODE='P0001'; END IF;
   w:=(d->>'weight')::numeric;
-  IF w IS NULL OR NOT(w BETWEEN f.min_kg-.01 AND f.max_kg+.01) THEN RAISE EXCEPTION 'Недопустимый вес улова.' USING ERRCODE='P0001'; END IF;
+  trophy_value:=CASE WHEN coalesce((d->>'trophy')::boolean,false) THEN 1 ELSE 0 END;
+  -- трофей — единственный легальный вес выше max_kg (до ×1.5), цена ×2
+  IF w IS NULL OR NOT(w BETWEEN (CASE WHEN trophy_value=1 THEN f.max_kg ELSE f.min_kg END)-.01
+   AND (CASE WHEN trophy_value=1 THEN f.max_kg*1.5 ELSE f.max_kg END)+.01) THEN RAISE EXCEPTION 'Недопустимый вес улова.' USING ERRCODE='P0001'; END IF;
   kept_value:=CASE WHEN coalesce((d->>'kept')::boolean,false) THEN 1 ELSE 0 END;
   -- награда зависит от веса: 0.75× базовой цены при min_kg, 1.75× при max_kg (линейно, округление вверх)
   price_value:=CASE WHEN kept_value=1 THEN
-   floor(f.price*(CASE WHEN f.max_kg>f.min_kg THEN .75+(least(greatest(w,f.min_kg),f.max_kg)-f.min_kg)/(f.max_kg-f.min_kg) ELSE 1.0 END)+.5)::integer ELSE 0 END;
-  INSERT INTO catch(user_id,fish_id,location_id,weight_kg,kept,price,bait_id) VALUES(u,f.id,l.id,round(w,2),kept_value,price_value,a.bait_id);
+   floor(f.price*(CASE WHEN f.max_kg>f.min_kg THEN .75+(least(greatest(w,f.min_kg),f.max_kg)-f.min_kg)/(f.max_kg-f.min_kg) ELSE 1.0 END)+.5)::integer*(CASE WHEN trophy_value=1 THEN 2 ELSE 1 END) ELSE 0 END;
+  INSERT INTO catch(user_id,fish_id,location_id,weight_kg,kept,price,bait_id,trophy) VALUES(u,f.id,l.id,round(w,2),kept_value,price_value,a.bait_id,trophy_value);
   DELETE FROM active_cast WHERE user_id=u;
   UPDATE player SET money=money+price_value WHERE user_id=u;
   UPDATE quest SET progress=progress+1 WHERE user_id=u AND day=today AND claimed=0 AND
@@ -306,7 +323,7 @@ BEGIN
     OR (kind='sea' AND l.code='sea') OR (kind='bait' AND target=(SELECT code FROM bait WHERE id=a.bait_id)));
   SELECT count(*),count(DISTINCT fish_id) INTO total,species FROM catch WHERE user_id=u;
   SELECT count(*) INTO all_species FROM fish;
-  FOR r IN SELECT v.code FROM (VALUES('first_catch',total>=1),('hundred',total>=100),('sea_master',EXISTS(SELECT 1 FROM catch WHERE user_id=u AND fish_id=10)),('collector',species>=all_species)) v(code,earned) WHERE earned LOOP
+  FOR r IN SELECT v.code FROM (VALUES('first_catch',total>=1),('hundred',total>=100),('sea_master',EXISTS(SELECT 1 FROM catch WHERE user_id=u AND fish_id=10)),('collector',species>=all_species),('trophy',EXISTS(SELECT 1 FROM catch WHERE user_id=u AND trophy=1))) v(code,earned) WHERE earned LOOP
    INSERT INTO achievement VALUES(u,r.code,to_char(current_timestamp AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS')) ON CONFLICT DO NOTHING;
    IF FOUND THEN codes:=codes||jsonb_build_array(r.code); END IF;
   END LOOP;

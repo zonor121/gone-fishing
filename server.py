@@ -2,10 +2,10 @@
 Запуск: python server.py  ->  http://localhost:8000"""
 import json, os, random, sqlite3, sys, time
 from contextlib import closing
-from sea import migrate as migrate_sea, BOAT_PRICE, BELLS_PRICE, MIN_CATCH_SECONDS
+from sea import migrate as migrate_sea, BOAT_PRICE, BELLS_PRICE, MIN_CATCH_SECONDS, ROD_PRICES
 import auth
 import world
-from world import SPIN_BAIT_SPEND_CHANCE
+from world import SPIN_BAIT_SPEND_CHANCE, TROPHY_CHANCE, TROPHY_MAX_MULT, TROPHY_PRICE_MULT
 import supabase_db
 supabase_db.load_env(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 DB_BACKEND = os.environ.get('DB_BACKEND', 'supabase').lower()
@@ -59,11 +59,14 @@ def _get_config(c):
             for r in c.execute('SELECT * FROM location ORDER BY id')]
     rods = [dict(r) for r in c.execute(
         'SELECT id,name,max_range AS rng,strength AS str,reel_speed AS spd FROM rod ORDER BY id')]
+    for r in rods:
+        r['price'] = ROD_PRICES.get(r['id'], 0)
     baits = [dict(r) for r in c.execute('SELECT id,code,name,price FROM bait ORDER BY price')]
     fish = []
     for r in c.execute('SELECT * FROM fish ORDER BY price'):
         fish.append({'id': r['id'], 'name': r['name'], 'min': r['min_kg'], 'max': r['max_kg'],
                      'freq': r['bite_freq'], 'res': r['resistance'], 'color': r['color'], 'price': r['price'],
+                     'style': r['fight_style'],
                      'times': r['times'].split(',') if r['times'] else None,
                      'weather': r['weather'].split(',') if r['weather'] else None,
                      'locs': [x['code'] for x in c.execute(
@@ -72,6 +75,7 @@ def _get_config(c):
                          'SELECT b.code,fb.bite_weight FROM fish_bait fb JOIN bait b ON b.id=fb.bait_id WHERE fb.fish_id=?', (r['id'],))}})
     return {'locations': locs, 'rods': rods, 'baits': baits, 'fish': fish,
             'boat_price': BOAT_PRICE, 'bells_price': BELLS_PRICE, 'min_catch_seconds': MIN_CATCH_SECONDS,
+            'rod_prices': ROD_PRICES, 'trophy_chance': TROPHY_CHANCE,
             'world': {'day_parts': [{'code': p, 'name': world.DAY_PART_NAMES[p]} for p in world.DAY_PARTS],
                       'day_part_seconds': world.DAY_PART_SECONDS,
                       'weathers': [{'code': w, 'name': world.WEATHER_NAMES[w]} for w in world.WEATHER_CODES]}}
@@ -81,7 +85,7 @@ def get_state(uid):
         return _get_state(c, uid)
 
 def _get_state(c, uid):
-    p = c.execute('''SELECT u.username, p.money, p.tutorial_done, p.boat_owned, p.bells_owned
+    p = c.execute('''SELECT u.username, p.money, p.tutorial_done, p.boat_owned, p.bells_owned, p.rod_level
                      FROM player p JOIN user u ON u.id=p.user_id WHERE p.user_id=?''', (uid,)).fetchone()
     baits = {r['code']: r['qty'] for r in c.execute(
         '''SELECT b.code,pb.qty FROM player_bait pb JOIN bait b ON b.id=pb.bait_id WHERE pb.user_id=?''', (uid,))}
@@ -90,7 +94,7 @@ def _get_state(c, uid):
            FROM catch c JOIN fish f ON f.id=c.fish_id WHERE c.kept=1 AND c.user_id=?
            GROUP BY f.id ORDER BY f.price''', (uid,))]
     last = [dict(r) for r in c.execute(
-        '''SELECT f.name fish, l.name location, c.weight_kg weight, c.kept, c.price, c.caught_at
+        '''SELECT f.name fish, l.name location, c.weight_kg weight, c.kept, c.price, c.trophy, c.caught_at
            FROM catch c JOIN fish f ON f.id=c.fish_id JOIN location l ON l.id=c.location_id
            WHERE c.user_id=? ORDER BY c.id DESC LIMIT 8''', (uid,))]
     weather, weather_until = world.roll_weather(c)
@@ -107,7 +111,7 @@ def _get_state(c, uid):
     diary = world.diary(c, uid)
     return {'username': p['username'], 'money': p['money'], 'tutorial_done': bool(p['tutorial_done']),
             'baits': baits, 'inventory': inv, 'last': last, 'boat_owned': bool(p['boat_owned']),
-            'bells_owned': bool(p['bells_owned']),
+            'bells_owned': bool(p['bells_owned']), 'rod_level': p['rod_level'],
             'world': {'day_part': world.day_part(now), 'day_part_left': world.day_part_left(now),
                       'weather': weather, 'weather_left': max(0, int(weather_until - now))},
             'quests': quests, 'achievements': achievements, 'diary': diary}
@@ -192,6 +196,19 @@ def post_buy(d, uid):
             c.execute('UPDATE player SET money=money-?,bells_owned=1 WHERE user_id=?', (BELLS_PRICE, uid))
             c.commit()
             return 200, {'ok': True}
+        if d.get('item') == 'rod':
+            p = c.execute('SELECT money,rod_level FROM player WHERE user_id=?', (uid,)).fetchone()
+            top = c.execute('SELECT MAX(id) FROM rod').fetchone()[0]
+            if p['rod_level'] >= top:
+                return 409, {'ok': False, 'error': 'Все удочки уже приобретены'}
+            nxt = p['rod_level'] + 1
+            price = ROD_PRICES.get(nxt, 0)
+            rod = c.execute('SELECT name FROM rod WHERE id=?', (nxt,)).fetchone()
+            if not price or not rod or p['money'] < price:
+                return 400, {'ok': False, 'error': f'Не хватает денег: {rod["name"] if rod else "удочка"} стоит {price:,} ₽.'.replace(',', ' ')}
+            c.execute('UPDATE player SET money=money-?,rod_level=? WHERE user_id=?', (price, nxt, uid))
+            c.commit()
+            return 200, {'ok': True}
         b = c.execute('SELECT id,price FROM bait WHERE code=?', (d.get('bait'),)).fetchone()
         money = c.execute('SELECT money FROM player WHERE user_id=?', (uid,)).fetchone()['money']
         if not b or not 1 <= n <= 99 or money < b['price'] * n:
@@ -217,12 +234,18 @@ def post_catch(d, uid):                    # «Забрать» -> деньги,
         f = c.execute('SELECT min_kg,max_kg,price FROM fish WHERE id=?', (d.get('fish_id'),)).fetchone()
         l = c.execute('SELECT id FROM location WHERE code=?', (d.get('location'),)).fetchone()
         w = float(d.get('weight', 0))
-        if not f or not l or not (f['min_kg'] - 0.01 <= w <= f['max_kg'] + 0.01):
+        trophy = 1 if d.get('trophy') else 0
+        if not f or not l:
+            return 400, {'ok': False, 'error': 'Недопустимый вес улова.'}
+        # Трофей — единственный легальный способ поймать рыбу тяжелее max_kg (до ×1.5).
+        lo = f['max_kg'] if trophy else f['min_kg']
+        hi = f['max_kg'] * TROPHY_MAX_MULT if trophy else f['max_kg']
+        if not (lo - 0.01 <= w <= hi + 0.01):
             return 400, {'ok': False, 'error': 'Недопустимый вес улова.'}
         kept = 1 if d.get('kept') else 0
-        price = weighted_price(f, w) if kept else 0
-        c.execute('INSERT INTO catch(user_id,fish_id,location_id,weight_kg,kept,price,bait_id) VALUES (?,?,?,?,?,?,?)',
-                  (uid, d['fish_id'], l['id'], round(w, 2), kept, price, active['bait_id']))
+        price = weighted_price(f, w) * (TROPHY_PRICE_MULT if trophy else 1) if kept else 0
+        c.execute('INSERT INTO catch(user_id,fish_id,location_id,weight_kg,kept,price,bait_id,trophy) VALUES (?,?,?,?,?,?,?,?)',
+                  (uid, d['fish_id'], l['id'], round(w, 2), kept, price, active['bait_id'], trophy))
         c.execute('DELETE FROM active_cast WHERE user_id=?', (uid,))
         c.execute('UPDATE player SET money=money+? WHERE user_id=?', (price, uid))
         # Прогресс ежедневных заданий и достижения считаются тем же уловом.

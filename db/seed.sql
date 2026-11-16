@@ -7,14 +7,15 @@ INSERT INTO rod(id,name,max_range,strength,reel_speed) VALUES
 INSERT INTO bait(id,code,name,price) VALUES
 (1,'worm','Червь',10),(2,'maggot','Опарыш',30),(3,'corn','Кукуруза',60),(4,'spin','Блесна',100);
 -- times/weather: активность по времени суток и погоде; NULL — клюёт всегда.
+-- fight_style: характер вываживания (calm — вялый, dart — рывки, heavy — упорный, diver — ныряет).
 -- Окунь ловится утром и вечером, плотва — утром и днём.
-INSERT INTO fish(id,name,min_kg,max_kg,bite_freq,resistance,color,price,times,weather) VALUES
-(1,'Карась',0.3,1.2,3,0.30,'#d8a23a',100,NULL,NULL),(2,'Карп',1,8,1.5,0.75,'#a9733b',250,NULL,NULL),
-(3,'Окунь',0.2,1.5,2,0.40,'#6a9a3c',150,'morning,evening',NULL),
-(4,'Щука',1,9,1,0.90,'#4f7d4a',300,NULL,NULL),
-(5,'Плотва',0.1,0.7,3,0.20,'#b8c4cc',50,'morning,day',NULL),(6,'Лещ',0.5,4,1.5,0.50,'#c9b27a',200,NULL,NULL),
-(11,'Налим',1,7,1.2,0.80,'#7d8a6e',300,'night',NULL),        -- налим клюёт только ночью
-(12,'Форель',0.5,4,1.8,0.62,'#8fa8b8',350,NULL,'rain');      -- форель клюёт только в дождь
+INSERT INTO fish(id,name,min_kg,max_kg,bite_freq,resistance,color,price,times,weather,fight_style) VALUES
+(1,'Карась',0.3,1.2,3,0.30,'#d8a23a',100,NULL,NULL,'calm'),(2,'Карп',1,8,1.5,0.75,'#a9733b',250,NULL,NULL,'heavy'),
+(3,'Окунь',0.2,1.5,2,0.40,'#6a9a3c',150,'morning,evening',NULL,'calm'),
+(4,'Щука',1,9,1,0.90,'#4f7d4a',300,NULL,NULL,'dart'),
+(5,'Плотва',0.1,0.7,3,0.20,'#b8c4cc',50,'morning,day',NULL,'calm'),(6,'Лещ',0.5,4,1.5,0.50,'#c9b27a',200,NULL,NULL,'heavy'),
+(11,'Налим',1,7,1.2,0.80,'#7d8a6e',300,'night',NULL,'diver'),        -- налим клюёт только ночью
+(12,'Форель',0.5,4,1.8,0.62,'#8fa8b8',350,NULL,'rain','dart');      -- форель клюёт только в дождь
 INSERT INTO fish_location VALUES (1,1),(1,3),(2,1),(2,2),(3,1),(3,2),(3,3),(4,1),(4,2),(5,1),(5,2),(5,3),(6,1),(6,2),
 (11,1),(11,2),(12,2),(12,3);
 -- дешёвая наживка: только дешёвая рыба; дорогая: и дешёвая, и дорогая (но дорогая клюёт реже)

@@ -28,7 +28,7 @@ def literal(value):
         return "'" + value.replace("'", "''") + "'"
     return str(value)
 
-fish = [(7,'Скумбрия',.4,2.,2.5,.45,'#79abb5',240,None,None), (8,'Треска',1.,7.,1.6,.72,'#a29b76',420,None,None), (9,'Морской окунь',.5,3.5,2.,.58,'#d18369',320,None,None), (10,'Тунец',3.,15.,.65,.95,'#537e9a',700,'day',None)]
+fish = [(7,'Скумбрия',.4,2.,2.5,.45,'#79abb5',240,None,None,'dart'), (8,'Треска',1.,7.,1.6,.72,'#a29b76',420,None,None,'heavy'), (9,'Морской окунь',.5,3.5,2.,.58,'#d18369',320,None,None,'dart'), (10,'Тунец',3.,15.,.65,.95,'#537e9a',700,'day',None,'dart')]
 for table, rows in [('fish',fish), ('fish_location', [(i,4) for i in range(7,11)]), ('fish_bait',[(7,5,1),(7,4,.7),(8,5,.8),(9,5,1),(9,4,.6),(10,4,.4),(10,5,.25)])]:
     for row in rows:
         seed += 'INSERT INTO ' + table + ' VALUES (' + ','.join(map(literal,row)) + ') ON CONFLICT DO NOTHING;\n'
