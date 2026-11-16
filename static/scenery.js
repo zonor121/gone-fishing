@@ -313,7 +313,7 @@ function drawFirstPersonRod(tx, ty, time) {
   g.fillStyle=D('#2b2620');g.beginPath();g.ellipse(gx0+1,gy0+1,6,4,-.5,0,7);g.fill();
   // Бланк: кубическая кривая с прогибом под нагрузкой, конусный профиль.
   const bx0=563, by0=333-lift, dx=tx-bx0, dy=ty-by0, len=Math.hypot(dx,dy)||1;
-  let nx=dy/len, ny=-dx/len; if(ny<0){nx=-nx;ny=-ny;}
+  let nx=dy/len, ny=-dx/len; if(ny>0){nx=-nx;ny=-ny;}
   const bow=S==='reel' ? t*38+(sd>0?sd*10:0) : (S==='idle'||S==='wait') ? 4 : 0;
   const c1x=bx0+dx*.33+nx*bow*.45, c1y=by0+dy*.33+ny*bow*.45;
   const c2x=bx0+dx*.72+nx*bow, c2y=by0+dy*.72+ny*bow;

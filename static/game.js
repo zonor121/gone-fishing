@@ -257,7 +257,7 @@ function rodTip() {
   const sway = reduce ? 0 : Math.sin(tt*1.4)*1.3;
   const twitch = !reduce && S === 'bite' ? Math.sin(tt*30)*1.6*Math.max(0, tm/2) : 0;
   const jerk = !reduce && S === 'reel' && sd > 0 ? sd*7 : 0;
-  return [448 + back*110 + bend*.35 + sway + jerk*.6 + twitch, 150 - back*115 + bend + sway + jerk + twitch*.6];
+  return [448 + back*110 - bend*.2 + sway + jerk*.6 + twitch, 150 - back*115 - bend*.55 + sway + jerk + twitch*.6];
 }
 function bar(x, y, wd, v, lab, col, dz) {
   g.fillStyle = 'rgba(0,0,0,.4)'; g.fillRect(x, y, wd, 16);
@@ -304,9 +304,8 @@ function draw() {
     if(S==='reel'&&sd>0){g.strokeStyle='rgba(233,244,226,.7)';g.lineWidth=1.2;
       for(let i=0;i<3;i++){const a=-Math.PI/2+(i-1)*.55,r=(9+sd*12)*scale;
         g.beginPath();g.moveTo(px+Math.cos(a)*r*.35,py+Math.sin(a)*r*.35);g.lineTo(px+Math.cos(a)*r,py+Math.sin(a)*r);g.stroke();}}
-    // Рыба видна только когда её вытащили: карточка улова и анимация «забрать/отпустить».
-    if(S==='res'){g.save();g.translate(px,py);g.scale(scale,scale);drawFish(0,0);g.restore();}
-    else {g.save();g.translate(px,py);g.scale(scale,scale);g.strokeStyle='#eee5c8';g.lineWidth=1;g.beginPath();g.moveTo(0,-12);g.lineTo(0,4);g.stroke();g.fillStyle='#ef613f';g.beginPath();g.ellipse(0,-5,3,6,0,0,7);g.fill();g.fillStyle='#f0e8cd';g.fillRect(-2,-2,4,4);g.restore();}
+    // Рыба видна только в воздухе: анимация «забрать/отпустить» после решения.
+    if(S==='fly'||S==='wait'||S==='bite'){g.save();g.translate(px,py);g.scale(scale,scale);g.strokeStyle='#eee5c8';g.lineWidth=1;g.beginPath();g.moveTo(0,-12);g.lineTo(0,4);g.stroke();g.fillStyle='#ef613f';g.beginPath();g.ellipse(0,-5,3,6,0,0,7);g.fill();g.fillStyle='#f0e8cd';g.fillRect(-2,-2,4,4);g.restore();}
   } else if(S!=='out'){
     g.strokeStyle='rgba(246,244,218,.8)';g.lineWidth=.8;g.beginPath();g.moveTo(tx,ty);g.lineTo(tx+3,ty+38);g.stroke();
   }
