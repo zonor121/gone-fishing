@@ -385,6 +385,35 @@ function drawFirstPersonDock() {
     dockReady=true;dockLighting=lighting;
   }
   g.drawImage(dockTexture,0,0,800,420);
+  drawDockWet();
+}
+
+// Намокание понтона: дешёвый оверлей поверх кэша (клип по трапеции), текстура не пересобирается.
+function drawDockWet() {
+  if (dockWet <= .001) return;
+  const P = getPalette(), sky = mix(P.haze, '#e8f0f6', .55);
+  g.save();
+  g.beginPath(); g.moveTo(202,367); g.lineTo(598,367); g.lineTo(800,420); g.lineTo(0,420); g.closePath(); g.clip();
+  g.fillStyle = rgba('#121a24', .30 * dockWet); g.fillRect(0,367,800,53);
+  const sheen = g.createLinearGradient(0,367,0,420);
+  sheen.addColorStop(0, rgba(sky, .16 * dockWet)); sheen.addColorStop(1, rgba(sky, .03 * dockWet));
+  g.fillStyle = sheen; g.fillRect(0,367,800,53);
+  // Лужи проступают по одной (пороги .18….83), ближе к ногам крупнее; сохнут в обратном порядке.
+  for (let i = 0; i < 6; i++) {
+    const a = Math.max(0, Math.min(1, (dockWet - (.18 + i * .13)) / .18));
+    if (a <= 0) continue;
+    const f = .12 + noise(i + 3100) * .82, y = 367 + 53 * f;
+    const left = 202 * (1 - f), right = 800 - left;
+    const cx = left + (right - left) * (.12 + noise(i + 3200) * .76);
+    const sc = .5 + f * .85, rx = 13 * sc, ry = rx * .34;
+    g.fillStyle = rgba(mix(sky, '#9fb4c4', .3), .5 * a);
+    g.beginPath(); g.ellipse(cx, y, rx, ry, 0, 0, 7); g.fill();
+    g.strokeStyle = rgba('#1a2430', .3 * a); g.lineWidth = .8;
+    g.beginPath(); g.ellipse(cx, y, rx, ry, 0, 0, 7); g.stroke();
+    g.strokeStyle = rgba('#ffffff', .22 * a); g.lineWidth = .7;
+    g.beginPath(); g.ellipse(cx - rx * .25, y - ry * .3, rx * .45, ry * .3, 0, Math.PI * 1.05, Math.PI * 1.75); g.stroke();
+  }
+  g.restore();
 }
 
 // Только руки и снасть: положение камеры совпадает со взглядом рыбака.

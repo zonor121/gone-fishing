@@ -17,6 +17,7 @@ const rub = n => n.toLocaleString('ru-RU');   // «10 000» — все сумм�
 // состояния: idle, charge, fly, wait, bite, reel, res (карточка), out (забрать/отпустить)
 let S = 'idle', pw = 0, hold = 0, tm = 0, bx = 0, fish = null, w = 0, t = 0, d = 1;
 let cast = 0, sd = 0, sg = 2, tt = 0, last = 0, outT = 0, outKeep = false, outMsg = '';
+let dockWet = 0;                        // 0 сухо → 1 промокло: в дождь растёт (~25 с), без дождя сохнет (~45 с)
 const rnd = (a, b) => a + Math.random() * (b - a);
 // Награда зависит от веса: 0.75× базовой цены при min, 1.75× при max — та же формула, что и на сервере.
 const priceFor = (f, w) => Math.round(f.price * (f.max > f.min ? .75 + (Math.min(Math.max(w, f.min), f.max) - f.min) / (f.max - f.min) : 1));
@@ -183,6 +184,7 @@ function end(m, fail) {
 }
 function update(dt) {
   tt += dt;
+  dockWet = Math.max(0, Math.min(1, dockWet + (currentWeather() === 'rain' ? dt / 25 : -dt / 45)));
   if (castPending) return;
   if (S === 'charge') pw = Math.min(1, pw + dt * .7);
   if (S === 'fly') {
