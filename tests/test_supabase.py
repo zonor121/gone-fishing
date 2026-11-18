@@ -85,7 +85,7 @@ class SupabaseTests(unittest.TestCase):
         self.assertEqual([m.name for m in migs],
                          ['001_weighted_catch_price.sql', '002_boat_price_10000_and_spin_bait.sql',
                           '003_bells_200.sql', '004_leaderboard.sql', '005_fight_styles_rods_trophies.sql',
-                          '006_tackle_reels.sql'])
+                          '006_tackle_reels.sql', '007_linear_rods.sql'])
         last = migs[-1].read_text(encoding='utf-8')
         # заголовок-комментарий допускается; тело функции должно совпадать с api посимвольно
         self.assertIn(api_fn, last, 'последняя миграция устарела относительно db/supabase_api.sql')
@@ -106,7 +106,7 @@ class SupabaseTests(unittest.TestCase):
                     'ADD COLUMN IF NOT EXISTS trophy'):
             self.assertIn(ddl, migs[4].read_text(encoding='utf-8'))
         for ddl in ('ADD COLUMN IF NOT EXISTS tackle_level', 'ADD COLUMN IF NOT EXISTS reel_level'):
-            self.assertIn(ddl, last)
+            self.assertIn(ddl, migs[5].read_text(encoding='utf-8'))
         self.assertIn("d->>'item'='tackle'", last)                   # снасти и катушки — только в 006
         self.assertIn("d->>'item'='reel'", last)
         self.assertNotIn("d->>'item'='tackle'", migs[4].read_text(encoding='utf-8'))

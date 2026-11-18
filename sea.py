@@ -3,7 +3,7 @@ BOAT_PRICE = 10000
 BELLS_PRICE = 200
 MIN_CATCH_SECONDS = 12
 # Последовательный апгрейд удочек: id следующей → цена (бамбуковая бесплатна).
-ROD_PRICES = {2: 1200, 3: 4500}
+ROD_PRICES = {2: 600, 3: 1200, 4: 1800, 5: 2400, 6: 3000}
 # Снасти: красная зона шкалы натяжения по уровням 1–6 (обрыв на входе в зону).
 TACKLE_PRICES = {2: 600, 3: 1500, 4: 3000, 5: 5500, 6: 9000}
 TACKLE_ZONES = [.30, .26, .22, .18, .14, .10]
@@ -13,6 +13,7 @@ REEL_RECOVERY = [.5, .6, .7, .8, .9, 1.0]
 SEA_FISH_STYLES = {7: 'dart', 8: 'heavy', 9: 'dart', 10: 'dart'}
 
 def migrate(c):
+    c.execute('BEGIN IMMEDIATE')
     columns = {r[1] for r in c.execute('PRAGMA table_info(player)')}
     if 'boat_owned' not in columns:
         c.execute('ALTER TABLE player ADD COLUMN boat_owned INTEGER NOT NULL DEFAULT 0')
@@ -24,6 +25,15 @@ def migrate(c):
         c.execute('ALTER TABLE player ADD COLUMN tackle_level INTEGER NOT NULL DEFAULT 1')
     if 'reel_level' not in columns:
         c.execute('ALTER TABLE player ADD COLUMN reel_level INTEGER NOT NULL DEFAULT 1')
+    if c.execute("""SELECT 1 FROM rod WHERE id=2 AND name='Спиннинг'
+                    AND EXISTS(SELECT 1 FROM rod WHERE id=3 AND name='Карбон')""").fetchone():
+        c.execute('UPDATE player SET rod_level=CASE rod_level WHEN 2 THEN 3 WHEN 3 THEN 6 ELSE rod_level END')
+    c.executemany('''INSERT INTO rod(id,name,max_range,strength,reel_speed) VALUES (?,?,?,?,?)
+                     ON CONFLICT(id) DO UPDATE SET name=excluded.name,max_range=excluded.max_range,
+                     strength=excluded.strength,reel_speed=excluded.reel_speed''', [
+        (1,'Бамбуковая',300,1.0,1.0),(2,'Стеклопластик',350,1.15,1.1),
+        (3,'Спиннинг',400,1.3,1.2),(4,'Композит',450,1.45,1.3),
+        (5,'Графит',500,1.6,1.4),(6,'Карбон',550,1.75,1.5)])
     c.execute('''CREATE TABLE IF NOT EXISTS active_cast(
         id INTEGER PRIMARY KEY CHECK(id=1), location_id INTEGER NOT NULL,
         bait_id INTEGER NOT NULL, ready_at REAL NOT NULL)''')

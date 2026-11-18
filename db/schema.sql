@@ -38,7 +38,9 @@ CREATE TABLE player(                             -- деньги и флаги: 
   tutorial_done INTEGER NOT NULL DEFAULT 0,
   boat_owned INTEGER NOT NULL DEFAULT 0,
   bells_owned INTEGER NOT NULL DEFAULT 0,
-  rod_level INTEGER NOT NULL DEFAULT 1);         -- id старшей купленной удочки (1 = бамбуковая)
+  rod_level INTEGER NOT NULL DEFAULT 1,
+  tackle_level INTEGER NOT NULL DEFAULT 1,
+  reel_level INTEGER NOT NULL DEFAULT 1);
 CREATE TABLE player_bait(                        -- запас наживки на аккаунт
   user_id INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE,
   bait_id INTEGER NOT NULL REFERENCES bait(id),

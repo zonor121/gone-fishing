@@ -36,5 +36,7 @@ tables = re.findall(r'CREATE TABLE IF NOT EXISTS (\w+)', schema)
 security = '\n'.join(f'ALTER TABLE {t} ENABLE ROW LEVEL SECURITY;\nREVOKE ALL ON {t} FROM anon, authenticated;\nGRANT ALL ON {t} TO service_role;' for t in tables)
 security += '\nGRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO service_role;\n'
 api = (root / 'db/supabase_api.sql').read_text(encoding='utf-8').replace('"user"', 'fishing_user').replace('BEGIN;\n', '', 1).replace('\nCOMMIT;', '')
-(root / 'db/supabase.sql').write_text('BEGIN;\n' + schema + seed + security + api + '\nCOMMIT;\n', encoding='utf-8')
+rod_migration = (root / 'db/migrations/007_linear_rods.sql').read_text(encoding='utf-8')
+rod_migration = rod_migration.split('CREATE OR REPLACE FUNCTION', 1)[0].replace('BEGIN;\n', '', 1)
+(root / 'db/supabase.sql').write_text('BEGIN;\n' + schema + rod_migration + seed + security + api + '\nCOMMIT;\n', encoding='utf-8')
 print('Generated db/supabase.sql')

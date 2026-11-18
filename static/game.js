@@ -265,10 +265,10 @@ document.querySelectorAll('.modal').forEach(el => {
 document.querySelectorAll('.x').forEach(b => b.onclick = () => modal(b.closest('.modal').id, false));
 function rodShopSection() {
   if (rodLevel === null) return '';   // старый сервер без магазина удочек
-  const next = R[rodLevel];
+  const current = R[rodLevel - 1], next = R[rodLevel];
   if (!next) return '<section class="boat-product"><div><h3>Удочки</h3><p>Все удочки приобретены — снасти на любой вкус.</p></div><button disabled>Уже куплены</button></section>';
   const price = rodPrices[next.id] || next.price;
-  return `<section class="boat-product"><div><h3>Удочка · ${next.name}</h3><p>Дальность ${next.rng}, прочность ×${next.str}, скорость подмотки ×${next.spd}. Апгрейд навсегда — следующая ступень после вашей текущей удочки.</p><p class="boat-progress">Накоплено ${M.toLocaleString('ru-RU')} из ${rub(price)} ₽</p></div><button data-rod>Купить · ${rub(price)} ₽</button></section>`;
+  return `<section class="boat-product"><div><h3>Удочка · ${next.name}</h3><p>${current.name} → ${next.name}</p><p>Дальность ${current.rng} → ${next.rng}, прочность ×${current.str} → ×${next.str}, подмотка ×${current.spd} → ×${next.spd}. Апгрейд навсегда.</p><p class="boat-progress">Накоплено ${M.toLocaleString('ru-RU')} из ${rub(price)} ₽</p></div><button data-rod>Купить · ${rub(price)} ₽</button></section>`;
 }
 function upgradeShopSection(kind) {
   const level = kind === 'tackle' ? tackleLevel : reelLevel;

@@ -39,7 +39,9 @@ CREATE TABLE IF NOT EXISTS player(
   tutorial_done INTEGER NOT NULL DEFAULT 0,
   boat_owned INTEGER NOT NULL DEFAULT 0,
   bells_owned INTEGER NOT NULL DEFAULT 0,
-  rod_level INTEGER NOT NULL DEFAULT 1);         
+  rod_level INTEGER NOT NULL DEFAULT 1,
+  tackle_level INTEGER NOT NULL DEFAULT 1,
+  reel_level INTEGER NOT NULL DEFAULT 1);
 CREATE TABLE IF NOT EXISTS player_bait(                        
   user_id INTEGER NOT NULL REFERENCES fishing_user(id) ON DELETE CASCADE,
   bait_id INTEGER NOT NULL REFERENCES bait(id),
@@ -75,12 +77,29 @@ CREATE TABLE IF NOT EXISTS active_cast(
   location_id INTEGER NOT NULL, bait_id INTEGER NOT NULL, ready_at DOUBLE PRECISION NOT NULL);
 
 CREATE UNIQUE INDEX IF NOT EXISTS fishing_username_ci ON fishing_user(lower(username));
+LOCK TABLE player, rod IN EXCLUSIVE MODE;
+DO $$
+BEGIN
+ IF EXISTS(SELECT 1 FROM rod WHERE id=2 AND name='Спиннинг')
+    AND EXISTS(SELECT 1 FROM rod WHERE id=3 AND name='Карбон') THEN
+  UPDATE player SET rod_level=CASE rod_level WHEN 2 THEN 3 WHEN 3 THEN 6 ELSE rod_level END;
+ END IF;
+END;
+$$;
+INSERT INTO rod(id,name,max_range,strength,reel_speed) VALUES
+(1,'Бамбуковая',300,1.0,1.0),(2,'Стеклопластик',350,1.15,1.1),
+(3,'Спиннинг',400,1.3,1.2),(4,'Композит',450,1.45,1.3),
+(5,'Графит',500,1.6,1.4),(6,'Карбон',550,1.75,1.5)
+ON CONFLICT(id) DO UPDATE SET name=excluded.name,max_range=excluded.max_range,
+ strength=excluded.strength,reel_speed=excluded.reel_speed;
 INSERT INTO location(id,code,name,sky_top,sky_bottom,water_top,water_bottom,has_current,has_forest) VALUES
 (1,'lake','Озеро','#9fd3f0','#e6f4fa','#2f7fa8','#1b4d6b',0,0),
 (2,'river','Река','#a8d8ea','#f0f7e8','#3b8f8a','#1f5c5a',1,0),
 (3,'pond','Лесной пруд','#6f9a78','#b9d1a8','#37604a','#1d3a2c',0,1) ON CONFLICT DO NOTHING;
 INSERT INTO rod(id,name,max_range,strength,reel_speed) VALUES
-(1,'Бамбуковая',300,1.0,1.0),(2,'Спиннинг',400,1.3,1.2),(3,'Карбон',500,1.7,1.5) ON CONFLICT DO NOTHING;
+(1,'Бамбуковая',300,1.0,1.0),(2,'Стеклопластик',350,1.15,1.1),
+(3,'Спиннинг',400,1.3,1.2),(4,'Композит',450,1.45,1.3),
+(5,'Графит',500,1.6,1.4),(6,'Карбон',550,1.75,1.5) ON CONFLICT DO NOTHING;
 INSERT INTO bait(id,code,name,price) VALUES
 (1,'worm','Червь',10),(2,'maggot','Опарыш',30),(3,'corn','Кукуруза',60),(4,'spin','Блесна',100) ON CONFLICT DO NOTHING;
 
@@ -208,14 +227,14 @@ BEGIN
  ELSIF action='config' THEN
   RETURN jsonb_build_object(
    'locations',(SELECT jsonb_agg(jsonb_build_object('id',id,'code',code,'name',name,'sky',jsonb_build_array(sky_top,sky_bottom),'water',jsonb_build_array(water_top,water_bottom),'current',has_current=1,'forest',has_forest=1) ORDER BY id) FROM location),
-   'rods',(SELECT jsonb_agg(jsonb_build_object('id',id,'name',name,'rng',max_range,'str',strength,'spd',reel_speed,'price',CASE id WHEN 2 THEN 1200 WHEN 3 THEN 4500 ELSE 0 END) ORDER BY id) FROM rod),
+   'rods',(SELECT jsonb_agg(jsonb_build_object('id',id,'name',name,'rng',max_range,'str',strength,'spd',reel_speed,'price',CASE id WHEN 2 THEN 600 WHEN 3 THEN 1200 WHEN 4 THEN 1800 WHEN 5 THEN 2400 WHEN 6 THEN 3000 ELSE 0 END) ORDER BY id) FROM rod),
    'baits',(SELECT jsonb_agg(jsonb_build_object('id',id,'code',code,'name',name,'price',price) ORDER BY price) FROM bait),
    'fish',(SELECT jsonb_agg(jsonb_build_object('id',x.id,'name',x.name,'min',min_kg,'max',max_kg,'freq',bite_freq,'res',resistance,'color',color,'price',x.price,'style',fight_style,
      'times',string_to_array(times,','),'weather',string_to_array(weather,','),
      'locs',(SELECT jsonb_agg(l.code ORDER BY l.id) FROM fish_location fl JOIN location l ON l.id=fl.location_id WHERE fl.fish_id=x.id),
      'baits',(SELECT jsonb_object_agg(b.code,fb.bite_weight) FROM fish_bait fb JOIN bait b ON b.id=fb.bait_id WHERE fb.fish_id=x.id)) ORDER BY x.price) FROM fish x),
    'boat_price',10000,'bells_price',200,'min_catch_seconds',12,
-   'rod_prices','{"2":1200,"3":4500}'::jsonb,'trophy_chance',0.04,
+   'rod_prices','{"2":600,"3":1200,"4":1800,"5":2400,"6":3000}'::jsonb,'trophy_chance',0.04,
    'tackle_prices','{"2":600,"3":1500,"4":3000,"5":5500,"6":9000}'::jsonb,'tackle_zones','[0.30,0.26,0.22,0.18,0.14,0.10]'::jsonb,
    'reel_prices','{"2":500,"3":1300,"4":2800,"5":5000,"6":8000}'::jsonb,'reel_recovery','[0.5,0.6,0.7,0.8,0.9,1.0]'::jsonb,
    'world','{"day_parts":[{"code":"morning","name":"Утро"},{"code":"day","name":"День"},{"code":"evening","name":"Вечер"},{"code":"night","name":"Ночь"}],"day_part_seconds":180,"weathers":[{"code":"clear","name":"Ясно"},{"code":"rain","name":"Дождь"},{"code":"fog","name":"Туман"},{"code":"wind","name":"Ветер"}]}'::jsonb);
@@ -291,7 +310,7 @@ BEGIN
    SELECT max(id) INTO n FROM rod;
    IF p.rod_level>=n THEN RETURN '{"status":409,"body":{"ok":false,"error":"Все удочки уже приобретены"}}'; END IF;
    next_rod:=p.rod_level+1;
-   rod_price:=CASE next_rod WHEN 2 THEN 1200 WHEN 3 THEN 4500 ELSE 0 END;
+   rod_price:=CASE next_rod WHEN 2 THEN 600 WHEN 3 THEN 1200 WHEN 4 THEN 1800 WHEN 5 THEN 2400 WHEN 6 THEN 3000 ELSE 0 END;
    IF rod_price=0 OR p.money<rod_price THEN RAISE EXCEPTION 'Не хватает денег: удочка стоит % ₽.', rod_price USING ERRCODE='P0001'; END IF;
    UPDATE player SET money=money-rod_price,rod_level=next_rod WHERE user_id=u;
   ELSIF d->>'item'='tackle' THEN

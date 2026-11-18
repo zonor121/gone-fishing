@@ -41,9 +41,25 @@ process.stdout.write(JSON.stringify(result));
 class FightTests(unittest.TestCase):
     def probe(self, script):
         result = subprocess.run(['node', '-e', HARNESS], input=script, text=True,
-                                capture_output=True, cwd=ROOT, timeout=10)
+                                encoding='utf-8', capture_output=True, cwd=ROOT, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads(result.stdout)
+
+    def test_rod_shop_compares_best_owned_rod_to_next_upgrade(self):
+        result = self.probe("""(() => {
+          R = [
+            {id: 1, name: 'Бамбуковая', rng: 300, str: 1, spd: 1},
+            {id: 2, name: 'Стеклопластик', rng: 350, str: 1.15, spd: 1.1},
+            {id: 3, name: 'Спиннинг', rng: 400, str: 1.3, spd: 1.2}
+          ];
+          rodLevel = 2; sr.value = '0'; M = 1500; rodPrices = {3: 1200};
+          return rodShopSection();
+        })()""")
+        for comparison in ('Стеклопластик → Спиннинг', '350 → 400',
+                           '×1.15 → ×1.3', '×1.1 → ×1.2'):
+            self.assertIn(comparison, result)
+        self.assertIn('data-rod', result)
+        self.assertIn('1 200', result.replace('\xa0', ' '))
 
     def test_strength_uses_kilograms_not_species_maximum(self):
         result = self.probe("""(() => {
@@ -137,7 +153,7 @@ class FightTests(unittest.TestCase):
                 with self.subTest(weight=weight, random=random):
                     result = self.probe(f"""(() => {{
                       setup({{weight: {weight}, max: 15, resistance: .95, style: 'dart'}});
-                      R = [{{str: 1.7, spd: 1.5}}]; tackleLevel = 6; reelLevel = 6;
+                      R = [{{str: 1.75, spd: 1.5}}]; tackleLevel = 6; reelLevel = 6;
                       cardFish = () => {{}}; Math.random = () => {random};
                       S = 'bite'; down(); w = {weight}; trophy = w > fish.max;
                       let ticks = 0;
