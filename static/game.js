@@ -13,6 +13,12 @@ let M = 0, Q = {}, INV = [], tutDone = true, tut = -1;
 let boatOwned = false, boatPrice = 10000, bellsOwned = false, bellsPrice = 200, minCatchSeconds = 12, castPending = false;
 // rodLevel null = старый сервер без магазина удочек: доступны все, трофеи не роллятся.
 let rodLevel = null, rodPrices = {}, trophyChance = 0, trophy = false;
+// tackleLevel/reelLevel null = старый сервер без магазина снастей/катушек: обрыв при 100%, зона 20%, спад 50%/с.
+let tackleLevel = null, reelLevel = null, tacklePrices = {}, reelPrices = {};
+let tackleZones = [.30, .26, .22, .18, .14, .10], reelRecovery = [.5, .6, .7, .8, .9, 1.0];
+// Снасти задают порог обрыва (вход в красную зону), катушки — скорость спада натяжения на отдыхе.
+const breakAt = () => tackleLevel === null ? 1 : 1 - tackleZones[tackleLevel - 1];
+const recovery = () => reelLevel === null ? .5 : reelRecovery[reelLevel - 1];
 const rub = n => n.toLocaleString('ru-RU');   // «10 000» — все суммы в интерфейсе через этот хелпер
 // состояния: idle, charge, fly, wait, bite, reel, res (карточка), out (забрать/отпустить)
 let S = 'idle', pw = 0, hold = 0, tm = 0, bx = 0, fish = null, w = 0, t = 0, d = 1;
@@ -41,6 +47,9 @@ async function boot() {
   const cfg = await (await fetch('/api/config')).json();
   cfg.locations.forEach(l => { L[l.code] = l; sl.add(new Option(l.name, l.code)); });
   R = cfg.rods; rodPrices = cfg.rod_prices || {}; trophyChance = cfg.trophy_chance || 0; fillRodSelect();
+  tacklePrices = cfg.tackle_prices || {}; reelPrices = cfg.reel_prices || {};
+  if (cfg.tackle_zones) tackleZones = cfg.tackle_zones;
+  if (cfg.reel_recovery) reelRecovery = cfg.reel_recovery;
   BL = cfg.baits; BL.forEach(b => B[b.code] = b.name);
   F = cfg.fish; boatPrice = cfg.boat_price; bellsPrice = cfg.bells_price; minCatchSeconds = cfg.min_catch_seconds;
   if (cfg.world) {  // каталог времени суток и погоды — с сервера, единый источник
@@ -80,6 +89,8 @@ async function refresh() {
   const s = await res.json();
   M = s.money; Q = s.baits; INV = s.inventory; tutDone = s.tutorial_done; boatOwned = s.boat_owned; bellsOwned = s.bells_owned;
   rodLevel = s.rod_level === undefined ? null : s.rod_level; fillRodSelect();
+  tackleLevel = s.tackle_level === undefined ? null : s.tackle_level;
+  reelLevel = s.reel_level === undefined ? null : s.reel_level;
   $('username').textContent = s.username || '';
   $('userbox').hidden = !s.username;
   setWorldState(s);
@@ -197,10 +208,10 @@ function update(dt) {
   } else if (S === 'reel') {
     const r = R[sr.value], e = fish.res * (.6 + .4 * w / fish.max), fp = FIGHT[fish.style] || FIGHT_DEFAULT;
     sg -= dt; if (sg <= 0) { sd = fp.sd; sg = rnd(fp.sg[0], fp.sg[1]); }
-    if (hold) { t += dt * (.4 + .3 * e) * fp.ht / r.str; d -= dt * .16 * r.spd * (1 - e * .5) * fp.rm; } else t -= dt * .5;
+    if (hold) { t += dt * (.4 + .3 * e) * fp.ht / r.str; d -= dt * .16 * r.spd * (1 - e * .5) * fp.rm; } else t -= dt * recovery();
     if (sd > 0) { sd -= dt; d += dt * .12 * e * fp.jd; t += dt * .35 * e * fp.jt / r.str; }
     t = Math.max(0, t); d = Math.min(d, 1.1);
-    if (t >= 1) end('Леска оборвалась! Рыба ушла.', 1);
+    if (t >= breakAt()) end('Леска оборвалась! Рыба ушла.', 1);
     else if (d >= 1.08) end('Рыба ушла в глубину.', 1);
     else if (d <= 0) {
       S = 'res'; hold = 0;
@@ -257,18 +268,43 @@ function rodShopSection() {
   const price = rodPrices[next.id] || next.price;
   return `<section class="boat-product"><div><h3>Удочка · ${next.name}</h3><p>Дальность ${next.rng}, прочность ×${next.str}, скорость подмотки ×${next.spd}. Апгрейд навсегда — следующая ступень после вашей текущей удочки.</p><p class="boat-progress">Накоплено ${M.toLocaleString('ru-RU')} из ${rub(price)} ₽</p></div><button data-rod>Купить · ${rub(price)} ₽</button></section>`;
 }
+function upgradeShopSection(kind) {
+  const level = kind === 'tackle' ? tackleLevel : reelLevel;
+  const prices = kind === 'tackle' ? tacklePrices : reelPrices;
+  if (level === null || !Object.keys(prices).length) return '';   // старый сервер без магазина снастей/катушек
+  const name = kind === 'tackle' ? 'Снасти' : 'Катушка';
+  const top = Math.max(...Object.keys(prices).map(Number));
+  const effect = lvl => kind === 'tackle'
+    ? `красная зона ${Math.round(tackleZones[lvl - 1] * 100)}%`
+    : `спад натяжения ${Math.round(reelRecovery[lvl - 1] * 100)}%/с`;
+  if (level >= top) return `<section class="boat-product"><div><h3>${name}</h3><p>Максимальный уровень · ${effect(level)}. ${kind === 'tackle' ? 'Окно вытягивания шире некуда.' : 'Отдых между подмотками минимальный.'}</p></div><button disabled>Уже куплены</button></section>`;
+  const price = prices[level + 1];
+  const desc = kind === 'tackle'
+    ? 'Качественная леска и оснастка: красная зона шкалы натяжения уменьшается, леска рвётся позже — окно вытягивания шире.'
+    : 'Инерционная катушка: натяжение спадает быстрее, пока кнопка отпущена — меньше простоя между подмотками.';
+  return `<section class="boat-product"><div><h3>${name} · уровень ${level + 1}</h3><p>${desc}</p><p class="boat-progress">${effect(level)} → ${effect(level + 1)} · Накоплено ${M.toLocaleString('ru-RU')} из ${rub(price)} ₽</p></div><button data-${kind}>Купить · ${rub(price)} ₽</button></section>`;
+}
 function renderShop() {
   $('shopbody').innerHTML = `<div>На счёте: <b>${M} ₽</b></div><table>` + BL.map(b => {
     const fl = F.filter(f => f.baits[b.code]).map(f => f.name).join(', ');
     return `<tr><td><b>${b.name}</b> — ${b.price} ₽<div class="fl">Ловится: ${fl}</div></td><td>в запасе: ${Q[b.code] || 0}</td>
       <td><button data-b="${b.code}" data-n="1">+1</button> <button data-b="${b.code}" data-n="10">+10</button></td></tr>`;
-  }).join('') + `</table>` + rodShopSection() + `<section class="boat-product"><div><h3>Лодка</h3><p>Откройте морскую рыбалку навсегда. Четыре новых вида рыб, открытая вода и ловля с лодки.</p><p class="boat-progress">${boatOwned ? 'Лодка приобретена · море открыто' : `Накоплено ${M.toLocaleString('ru-RU')} из ${rub(boatPrice)} ₽`}</p></div><button data-boat ${boatOwned ? 'disabled' : ''}>${boatOwned ? 'Уже куплена' : `Купить лодку · ${rub(boatPrice)} ₽`}</button></section><section class="boat-product"><div><h3>Колокольчики</h3><p>Звон при каждой поклёвке — подсечку не пропустите. Работает во всех локациях, покупка навсегда.</p><p class="boat-progress">${bellsOwned ? 'Колокольчики приобретены · звон включён' : `Накоплено ${M.toLocaleString('ru-RU')} из ${rub(bellsPrice)} ₽`}</p></div><button data-bells ${bellsOwned ? 'disabled' : ''}>${bellsOwned ? 'Уже куплены' : `Купить колокольчики · ${rub(bellsPrice)} ₽`}</button></section>`;
+  }).join('') + `</table>` + rodShopSection() + upgradeShopSection('tackle') + upgradeShopSection('reel') + `<section class="boat-product"><div><h3>Лодка</h3><p>Откройте морскую рыбалку навсегда. Четыре новых вида рыб, открытая вода и ловля с лодки.</p><p class="boat-progress">${boatOwned ? 'Лодка приобретена · море открыто' : `Накоплено ${M.toLocaleString('ru-RU')} из ${rub(boatPrice)} ₽`}</p></div><button data-boat ${boatOwned ? 'disabled' : ''}>${boatOwned ? 'Уже куплена' : `Купить лодку · ${rub(boatPrice)} ₽`}</button></section><section class="boat-product"><div><h3>Колокольчики</h3><p>Звон при каждой поклёвке — подсечку не пропустите. Работает во всех локациях, покупка навсегда.</p><p class="boat-progress">${bellsOwned ? 'Колокольчики приобретены · звон включён' : `Накоплено ${M.toLocaleString('ru-RU')} из ${rub(bellsPrice)} ₽`}</p></div><button data-bells ${bellsOwned ? 'disabled' : ''}>${bellsOwned ? 'Уже куплены' : `Купить колокольчики · ${rub(bellsPrice)} ₽`}</button></section>`;
 }
 $('shopbody').onclick = async e => {
   if (e.target.closest('[data-rod]')) {
     e.target.disabled = true;
     const r = await post('/api/buy', {item: 'rod'}).catch(() => ({}));
     $('shopmsg').textContent = r.ok ? 'Удочка приобретена! Она уже доступна в снастях.' : (r.error || 'Нет связи с сервером. Повторите покупку.');
+    await refresh(); renderShop(); return;
+  }
+  if (e.target.closest('[data-tackle]') || e.target.closest('[data-reel]')) {
+    const kind = e.target.closest('[data-tackle]') ? 'tackle' : 'reel';
+    e.target.disabled = true;
+    const r = await post('/api/buy', {item: kind}).catch(() => ({}));
+    $('shopmsg').textContent = r.ok
+      ? (kind === 'tackle' ? 'Снасти улучшены! Красная зона стала меньше — окно вытягивания шире.' : 'Катушка улучшена! Натяжение спадает быстрее на отдыхе.')
+      : (r.error || 'Нет связи с сервером. Повторите покупку.');
     await refresh(); renderShop(); return;
   }
   if (e.target.closest('[data-boat]')) {
@@ -289,13 +325,19 @@ $('shopbody').onclick = async e => {
   await refresh(); renderShop();
 };
 $('bshop').onclick = () => { $('shopmsg').textContent = ''; renderShop(); modal('shop', 1); };
+function tackleReelInvSection() {
+  let h = '';
+  if (tackleLevel !== null) h += `<h3>Снасти</h3><p>Уровень ${tackleLevel} из ${tackleZones.length} · красная зона ${Math.round(tackleZones[tackleLevel - 1] * 100)}% · леска рвётся при ${Math.round(breakAt() * 100)}% натяжения</p>`;
+  if (reelLevel !== null) h += `<h3>Катушка</h3><p>Уровень ${reelLevel} из ${reelRecovery.length} · спад натяжения на отдыхе ${Math.round(reelRecovery[reelLevel - 1] * 100)}%/с</p>`;
+  return h;
+}
 function renderInv() {
   $('invbody').innerHTML = `<h3>Лодка</h3><p>${boatOwned ? 'В собственности · морская рыбалка открыта навсегда' : `Не приобретена · ${rub(boatPrice)} ₽ в магазине`}</p><h3>Колокольчики</h3><p>${bellsOwned ? 'В собственности · звон при каждой поклёвке' : `Не приобретены · ${rub(bellsPrice)} ₽ в магазине`}</p><h3>Удочки</h3><table>` + R.map((r, i) => {
     const owned = rodLevel === null || i < rodLevel;
     const cell = !owned ? '<span class="fl">купите в магазине</span>' : +sr.value === i ? 'выбрана' : `<button data-r="${i}" ${sr.disabled ? 'disabled' : ''}>Выбрать</button>`;
     return `<tr><td>${r.name}</td><td class="fl">дальность ${r.rng}, прочность ×${r.str}, скорость ×${r.spd}</td><td>${cell}</td></tr>`;
   }).join('') +
-    '</table><h3>Наживка</h3><table>' + BL.map(b =>
+    '</table>' + tackleReelInvSection() + '<h3>Наживка</h3><table>' + BL.map(b =>
     `<tr><td>${b.name}</td><td>×${Q[b.code] || 0}</td><td>${sb.value === b.code ? 'выбрана' : `<button data-b="${b.code}" ${sb.disabled ? 'disabled' : ''}>Выбрать</button>`}</td></tr>`).join('') +
     '</table><h3>Рыба</h3>' + (INV.length ? '<table><tr><th>Вид</th><th>Шт.</th><th>Вес, кг</th><th>Рекорд</th></tr>' +
     INV.map(r => `<tr><td>${r.name}</td><td>${r.n}</td><td>${r.kg}</td><td>${r.best.toFixed(2)}</td></tr>`).join('') + '</table>' : '<div class="fl">Пока пусто</div>');
@@ -320,7 +362,7 @@ function rodTip() {
 function bar(x, y, wd, v, lab, col, dz) {
   g.fillStyle = 'rgba(0,0,0,.4)'; g.fillRect(x, y, wd, 16);
   g.fillStyle = col; g.fillRect(x, y, wd * Math.min(1, v), 16);
-  if (dz) { g.fillStyle = 'rgba(255,60,50,.35)'; g.fillRect(x + wd * .8, y, wd * .2, 16); }
+  if (dz) { g.fillStyle = 'rgba(255,60,50,.35)'; g.fillRect(x + wd * (1 - dz), y, wd * dz, 16); }
   g.strokeStyle = '#fff'; g.lineWidth = 1; g.strokeRect(x, y, wd, 16);
   g.fillStyle = '#fff'; g.font = '12px sans-serif'; g.fillText(lab, x, y - 4);
 }
@@ -385,7 +427,7 @@ function draw() {
   dayTint(g); drawWeatherEffects(g, time);
   if(S==='bite'){g.fillStyle='#fff3d2';g.font='600 28px sans-serif';g.textAlign='center';g.fillText('ПОДСЕКАЙ!',400,60);g.textAlign='left';}
   if(S==='charge') bar(24,30,200,pw,'Сила заброса '+Math.round(pw*100)+'%','#f2b632');
-  if(S==='reel') {bar(24,30,220,t,'Натяжение лески',t>.8?'#ff5a4d':'#5fd08a',true);bar(280,30,220,1-Math.min(1,d),'Рыба приближается','#58b4f0');}
+  if(S==='reel') {bar(24,30,220,t,'Натяжение лески',t>breakAt()-.15?'#ff5a4d':'#5fd08a',tackleLevel===null?.2:tackleZones[tackleLevel-1]);bar(280,30,220,1-Math.min(1,d),'Рыба приближается','#58b4f0');}
 }
 let accumulator = 0;
 function loop(ts) {

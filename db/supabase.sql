@@ -180,7 +180,7 @@ DECLARE
  p player%ROWTYPE; a active_cast%ROWTYPE; f fish%ROWTYPE; b bait%ROWTYPE;
  l location%ROWTYPE; q quest%ROWTYPE; r record;
  n integer; w numeric; price_value integer; kept_value integer; bait_kept boolean;
- trophy_value integer; rod_price integer; next_rod integer;
+ trophy_value integer; rod_price integer; next_rod integer; up_price integer; next_level integer;
  now_value double precision := extract(epoch from clock_timestamp());
  today text := to_char(current_timestamp AT TIME ZONE 'UTC','YYYY-MM-DD');
  weather_value text; until_value double precision; codes jsonb := '[]';
@@ -216,6 +216,8 @@ BEGIN
      'baits',(SELECT jsonb_object_agg(b.code,fb.bite_weight) FROM fish_bait fb JOIN bait b ON b.id=fb.bait_id WHERE fb.fish_id=x.id)) ORDER BY x.price) FROM fish x),
    'boat_price',10000,'bells_price',200,'min_catch_seconds',12,
    'rod_prices','{"2":1200,"3":4500}'::jsonb,'trophy_chance',0.04,
+   'tackle_prices','{"2":600,"3":1500,"4":3000,"5":5500,"6":9000}'::jsonb,'tackle_zones','[0.30,0.26,0.22,0.18,0.14,0.10]'::jsonb,
+   'reel_prices','{"2":500,"3":1300,"4":2800,"5":5000,"6":8000}'::jsonb,'reel_recovery','[0.5,0.6,0.7,0.8,0.9,1.0]'::jsonb,
    'world','{"day_parts":[{"code":"morning","name":"Утро"},{"code":"day","name":"День"},{"code":"evening","name":"Вечер"},{"code":"night","name":"Ночь"}],"day_part_seconds":180,"weathers":[{"code":"clear","name":"Ясно"},{"code":"rain","name":"Дождь"},{"code":"fog","name":"Туман"},{"code":"wind","name":"Ветер"}]}'::jsonb);
  END IF;
  -- Every per-player operation takes the same lock, including state/quest generation.
@@ -241,7 +243,7 @@ BEGIN
     ('bait','worm',2,'Поймать 2 рыбы на червя',180,'maggot',4)
    ) v(kind,target,goal,text,money,bait,qty) WHERE v.kind<>'sea' OR p.boat_owned=1 ORDER BY random() LIMIT 3;
   END IF;
-  RETURN jsonb_build_object('username',(SELECT username FROM fishing_user WHERE id=u),'money',p.money,'tutorial_done',p.tutorial_done=1,'boat_owned',p.boat_owned=1,'bells_owned',p.bells_owned=1,'rod_level',p.rod_level,
+  RETURN jsonb_build_object('username',(SELECT username FROM fishing_user WHERE id=u),'money',p.money,'tutorial_done',p.tutorial_done=1,'boat_owned',p.boat_owned=1,'bells_owned',p.bells_owned=1,'rod_level',p.rod_level,'tackle_level',p.tackle_level,'reel_level',p.reel_level,
    'baits',coalesce((SELECT jsonb_object_agg(b.code,pb.qty) FROM player_bait pb JOIN bait b ON b.id=pb.bait_id WHERE pb.user_id=u),'{}'),
    'inventory',coalesce((SELECT jsonb_agg(to_jsonb(x)-'sort_price' ORDER BY sort_price) FROM (SELECT f.name,count(*) n,round(sum(c.weight_kg)::numeric,2) kg,max(c.weight_kg) best,sum(c.price) earned,f.price sort_price FROM catch c JOIN fish f ON f.id=c.fish_id WHERE c.user_id=u AND c.kept=1 GROUP BY f.id) x),'[]'),
    'last',coalesce((SELECT jsonb_agg(to_jsonb(x)-'id' ORDER BY id DESC) FROM (SELECT c.id,f.name fish,l.name location,c.weight_kg weight,c.kept,c.price,c.trophy,c.caught_at FROM catch c JOIN fish f ON f.id=c.fish_id JOIN location l ON l.id=c.location_id WHERE c.user_id=u ORDER BY c.id DESC LIMIT 8) x),'[]'),
@@ -292,6 +294,20 @@ BEGIN
    rod_price:=CASE next_rod WHEN 2 THEN 1200 WHEN 3 THEN 4500 ELSE 0 END;
    IF rod_price=0 OR p.money<rod_price THEN RAISE EXCEPTION 'Не хватает денег: удочка стоит % ₽.', rod_price USING ERRCODE='P0001'; END IF;
    UPDATE player SET money=money-rod_price,rod_level=next_rod WHERE user_id=u;
+  ELSIF d->>'item'='tackle' THEN
+   -- последовательный апгрейд снастей: уровни 1–6, красная зона 30→10%
+   IF p.tackle_level>=6 THEN RETURN '{"status":409,"body":{"ok":false,"error":"Все снасти уже приобретены"}}'; END IF;
+   next_level:=p.tackle_level+1;
+   up_price:=CASE next_level WHEN 2 THEN 600 WHEN 3 THEN 1500 WHEN 4 THEN 3000 WHEN 5 THEN 5500 WHEN 6 THEN 9000 ELSE 0 END;
+   IF up_price=0 OR p.money<up_price THEN RAISE EXCEPTION 'Не хватает денег: улучшение (снасти) стоит % ₽.', up_price USING ERRCODE='P0001'; END IF;
+   UPDATE player SET money=money-up_price,tackle_level=next_level WHERE user_id=u;
+  ELSIF d->>'item'='reel' THEN
+   -- последовательный апгрейд катушек: уровни 1–6, спад натяжения 50→100%/с
+   IF p.reel_level>=6 THEN RETURN '{"status":409,"body":{"ok":false,"error":"Все катушки уже приобретены"}}'; END IF;
+   next_level:=p.reel_level+1;
+   up_price:=CASE next_level WHEN 2 THEN 500 WHEN 3 THEN 1300 WHEN 4 THEN 2800 WHEN 5 THEN 5000 WHEN 6 THEN 8000 ELSE 0 END;
+   IF up_price=0 OR p.money<up_price THEN RAISE EXCEPTION 'Не хватает денег: улучшение (катушки) стоит % ₽.', up_price USING ERRCODE='P0001'; END IF;
+   UPDATE player SET money=money-up_price,reel_level=next_level WHERE user_id=u;
   ELSE
    SELECT * INTO b FROM bait WHERE code=d->>'bait';
    IF b.id IS NULL OR n NOT BETWEEN 1 AND 99 OR p.money<b.price::bigint*n THEN RAISE EXCEPTION 'Не хватает денег' USING ERRCODE='P0001'; END IF;

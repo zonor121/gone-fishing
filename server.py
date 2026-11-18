@@ -2,7 +2,8 @@
 Запуск: python server.py  ->  http://localhost:8000"""
 import json, os, random, sqlite3, sys, time
 from contextlib import closing
-from sea import migrate as migrate_sea, BOAT_PRICE, BELLS_PRICE, MIN_CATCH_SECONDS, ROD_PRICES
+from sea import (migrate as migrate_sea, BOAT_PRICE, BELLS_PRICE, MIN_CATCH_SECONDS, ROD_PRICES,
+                 TACKLE_PRICES, TACKLE_ZONES, REEL_PRICES, REEL_RECOVERY)
 import auth
 import world
 from world import SPIN_BAIT_SPEND_CHANCE, TROPHY_CHANCE, TROPHY_MAX_MULT, TROPHY_PRICE_MULT
@@ -76,6 +77,8 @@ def _get_config(c):
     return {'locations': locs, 'rods': rods, 'baits': baits, 'fish': fish,
             'boat_price': BOAT_PRICE, 'bells_price': BELLS_PRICE, 'min_catch_seconds': MIN_CATCH_SECONDS,
             'rod_prices': ROD_PRICES, 'trophy_chance': TROPHY_CHANCE,
+            'tackle_prices': TACKLE_PRICES, 'tackle_zones': TACKLE_ZONES,
+            'reel_prices': REEL_PRICES, 'reel_recovery': REEL_RECOVERY,
             'world': {'day_parts': [{'code': p, 'name': world.DAY_PART_NAMES[p]} for p in world.DAY_PARTS],
                       'day_part_seconds': world.DAY_PART_SECONDS,
                       'weathers': [{'code': w, 'name': world.WEATHER_NAMES[w]} for w in world.WEATHER_CODES]}}
@@ -85,7 +88,8 @@ def get_state(uid):
         return _get_state(c, uid)
 
 def _get_state(c, uid):
-    p = c.execute('''SELECT u.username, p.money, p.tutorial_done, p.boat_owned, p.bells_owned, p.rod_level
+    p = c.execute('''SELECT u.username, p.money, p.tutorial_done, p.boat_owned, p.bells_owned, p.rod_level,
+                            p.tackle_level, p.reel_level
                      FROM player p JOIN user u ON u.id=p.user_id WHERE p.user_id=?''', (uid,)).fetchone()
     baits = {r['code']: r['qty'] for r in c.execute(
         '''SELECT b.code,pb.qty FROM player_bait pb JOIN bait b ON b.id=pb.bait_id WHERE pb.user_id=?''', (uid,))}
@@ -112,6 +116,7 @@ def _get_state(c, uid):
     return {'username': p['username'], 'money': p['money'], 'tutorial_done': bool(p['tutorial_done']),
             'baits': baits, 'inventory': inv, 'last': last, 'boat_owned': bool(p['boat_owned']),
             'bells_owned': bool(p['bells_owned']), 'rod_level': p['rod_level'],
+            'tackle_level': p['tackle_level'], 'reel_level': p['reel_level'],
             'world': {'day_part': world.day_part(now), 'day_part_left': world.day_part_left(now),
                       'weather': weather, 'weather_left': max(0, int(weather_until - now))},
             'quests': quests, 'achievements': achievements, 'diary': diary}
@@ -207,6 +212,21 @@ def post_buy(d, uid):
             if not price or not rod or p['money'] < price:
                 return 400, {'ok': False, 'error': f'Не хватает денег: {rod["name"] if rod else "удочка"} стоит {price:,} ₽.'.replace(',', ' ')}
             c.execute('UPDATE player SET money=money-?,rod_level=? WHERE user_id=?', (price, nxt, uid))
+            c.commit()
+            return 200, {'ok': True}
+        if d.get('item') in ('tackle', 'reel'):
+            item = d['item']
+            prices = TACKLE_PRICES if item == 'tackle' else REEL_PRICES
+            label = 'снасти' if item == 'tackle' else 'катушки'
+            col = item + '_level'
+            p = c.execute(f'SELECT money,{col} FROM player WHERE user_id=?', (uid,)).fetchone()
+            if p[col] >= max(prices):
+                return 409, {'ok': False, 'error': f'Все {label} уже приобретены'}
+            nxt = p[col] + 1
+            price = prices[nxt]
+            if p['money'] < price:
+                return 400, {'ok': False, 'error': f'Не хватает денег: улучшение ({label}) стоит {price:,} ₽.'.replace(',', ' ')}
+            c.execute(f'UPDATE player SET money=money-?,{col}=? WHERE user_id=?', (price, nxt, uid))
             c.commit()
             return 200, {'ok': True}
         b = c.execute('SELECT id,price FROM bait WHERE code=?', (d.get('bait'),)).fetchone()

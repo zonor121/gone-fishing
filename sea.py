@@ -4,6 +4,12 @@ BELLS_PRICE = 200
 MIN_CATCH_SECONDS = 12
 # Последовательный апгрейд удочек: id следующей → цена (бамбуковая бесплатна).
 ROD_PRICES = {2: 1200, 3: 4500}
+# Снасти: красная зона шкалы натяжения по уровням 1–6 (обрыв на входе в зону).
+TACKLE_PRICES = {2: 600, 3: 1500, 4: 3000, 5: 5500, 6: 9000}
+TACKLE_ZONES = [.30, .26, .22, .18, .14, .10]
+# Катушки: спад натяжения при отпущенной кнопке, долей шкалы в секунду.
+REEL_PRICES = {2: 500, 3: 1300, 4: 2800, 5: 5000, 6: 8000}
+REEL_RECOVERY = [.5, .6, .7, .8, .9, 1.0]
 SEA_FISH_STYLES = {7: 'dart', 8: 'heavy', 9: 'dart', 10: 'dart'}
 
 def migrate(c):
@@ -14,6 +20,10 @@ def migrate(c):
         c.execute('ALTER TABLE player ADD COLUMN bells_owned INTEGER NOT NULL DEFAULT 0')
     if 'rod_level' not in columns:
         c.execute('ALTER TABLE player ADD COLUMN rod_level INTEGER NOT NULL DEFAULT 1')
+    if 'tackle_level' not in columns:
+        c.execute('ALTER TABLE player ADD COLUMN tackle_level INTEGER NOT NULL DEFAULT 1')
+    if 'reel_level' not in columns:
+        c.execute('ALTER TABLE player ADD COLUMN reel_level INTEGER NOT NULL DEFAULT 1')
     c.execute('''CREATE TABLE IF NOT EXISTS active_cast(
         id INTEGER PRIMARY KEY CHECK(id=1), location_id INTEGER NOT NULL,
         bait_id INTEGER NOT NULL, ready_at REAL NOT NULL)''')
