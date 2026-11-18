@@ -22,7 +22,7 @@ const recovery = () => reelLevel === null ? .5 : reelRecovery[reelLevel - 1];
 const rub = n => n.toLocaleString('ru-RU');   // «10 000» — все суммы в интерфейсе через этот хелпер
 // состояния: idle, charge, fly, wait, bite, reel, res (карточка), out (забрать/отпустить)
 let S = 'idle', pw = 0, hold = 0, tm = 0, bx = 0, fish = null, w = 0, t = 0, d = 1;
-let cast = 0, sd = 0, sg = 2, tt = 0, last = 0, outT = 0, outKeep = false, outMsg = '';
+let cast = 0, sd = 0, sg = 2, tt = 0, last = 0, outT = 0, outKeep = false, outMsg = '', fatigue = 0;
 let dockWet = 0;                        // 0 сухо → 1 промокло: в дождь растёт (~25 с), без дождя сохнет (~45 с)
 const rnd = (a, b) => a + Math.random() * (b - a);
 // Награда зависит от веса: 0.75× базовой цены при min, 1.75× при max — та же формула, что и на сервере.
@@ -133,7 +133,7 @@ function down() {
     S = 'charge'; pw = 0; say('');
   } else if (S === 'wait') { S = 'idle'; fish = null; lock(false); say('Вы смотали удочку.'); }
   else if (S === 'bite') {
-    S = 'reel'; t = .2; d = 1; sd = 0; sg = 1;
+    S = 'reel'; t = .2; d = 1; sd = 0; sg = 1; fatigue = 0;
     trophy = trophyChance > 0 && Math.random() < trophyChance;
     w = trophy ? fish.max * rnd(1.25, 1.5) : rnd(fish.min, fish.max);
     say('Рыба на крючке! Чередуйте подмотку и ослабление.'); if (tut === 2) setTut(3);
@@ -206,10 +206,12 @@ function update(dt) {
   } else if (S === 'bite') {
     tm -= dt; if (tm <= 0) end('Поклёвка пропущена — рыба ушла.', 1);
   } else if (S === 'reel') {
-    const r = R[sr.value], e = fish.res * (.6 + .4 * w / fish.max), fp = FIGHT[fish.style] || FIGHT_DEFAULT;
+    const r = R[sr.value], mass = Math.sqrt(w), fp = FIGHT[fish.style] || FIGHT_DEFAULT;
     sg -= dt; if (sg <= 0) { sd = fp.sd; sg = rnd(fp.sg[0], fp.sg[1]); }
-    if (hold) { t += dt * (.4 + .3 * e) * fp.ht / r.str; d -= dt * .16 * r.spd * (1 - e * .5) * fp.rm; } else t -= dt * recovery();
-    if (sd > 0) { sd -= dt; d += dt * .12 * e * fp.jd; t += dt * .35 * e * fp.jt / r.str; }
+    fatigue = Math.min(1, fatigue + dt * ((hold ? 1 : 0) + (sd > 0 ? .75 : 0)) / (8 + 8 * mass));
+    const stamina = 1 - fatigue * .7, power = fish.res * (.55 + .45 * mass), strength = power * stamina;
+    if (hold) { t += dt * (.4 * stamina + .3 * strength) * fp.ht / r.str; d -= dt * .16 * r.spd * fp.rm / (1 + strength * .75); } else t -= dt * recovery();
+    if (sd > 0) { const surge = strength / (1 + 2 * power); sd -= dt; d += dt * .12 * surge * fp.jd; t += dt * .35 * surge * fp.jt / r.str; }
     t = Math.max(0, t); d = Math.min(d, 1.1);
     if (t >= breakAt()) end('Леска оборвалась! Рыба ушла.', 1);
     else if (d >= 1.08) end('Рыба ушла в глубину.', 1);
