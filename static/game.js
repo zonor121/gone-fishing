@@ -6,7 +6,8 @@ const SX = 400, WY = 355;                 // точка у ног и ближн�
 // Перспективная проекция дальности: расстояние растёт в глубину сцены.
 function waterPoint(distance) {
   const z = Math.max(0, distance), depth = 1 / (1 + z * .006);
-  return [400 + 16 * (1-depth), 239 + 116 * depth, .5 + depth * .7];
+  const horizon = sl.value === 'sea' ? 183 : 239, near = sl.value === 'sea' ? 290 : WY;
+  return [400 + 16 * (1-depth), horizon + (near-horizon) * depth, .5 + depth * .7];
 }
 let L = {}, R = [], BL = [], B = {}, F = [];
 let M = 0, Q = {}, INV = [], tutDone = true, tut = -1;
@@ -419,9 +420,9 @@ function draw() {
     g.strokeStyle='rgba(246,244,218,.8)';g.lineWidth=.8;g.beginPath();g.moveTo(tx,ty);g.lineTo(tx+3,ty+38);g.stroke();
   }
   if(S==='out'){
-    const u=outT;
-    g.save();g.translate(400+(outKeep?140*u:0),355-(outKeep?-90*u:100*Math.sin(Math.PI*u)));g.scale(outKeep?1+u:1-u*.6,outKeep?1+u:1-u*.6);drawFish(0,0);g.restore();
-    if(!outKeep&&u>.75){g.strokeStyle='rgba(233,244,226,.7)';g.beginPath();g.ellipse(400,355,60*(u-.75),15*(u-.75),0,0,7);g.stroke();}
+    const u=outT, [ox,oy]=waterPoint(0);
+    g.save();g.translate(ox+(outKeep?140*u:0),outKeep?oy+(WY+90-oy)*u:oy-100*Math.sin(Math.PI*u));g.scale(outKeep?1+u:1-u*.6,outKeep?1+u:1-u*.6);drawFish(0,0);g.restore();
+    if(!outKeep&&u>.75){g.strokeStyle='rgba(233,244,226,.7)';g.beginPath();g.ellipse(ox,oy,60*(u-.75),15*(u-.75),0,0,7);g.stroke();}
   }
   drawFirstPersonRod(tx,ty,time);
   g.restore();

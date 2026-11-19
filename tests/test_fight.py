@@ -61,6 +61,51 @@ class FightTests(unittest.TestCase):
         self.assertIn('data-rod', result)
         self.assertIn('1 200', result.replace('\xa0', ' '))
 
+    def test_sea_retrieval_stays_in_water_with_room_for_ripples_and_boat_bobbing(self):
+        points = self.probe("""(() => {
+          sl.value = 'sea';
+          return [0, 1, 24, 30, 100, 300, 550, 605].map(waterPoint);
+        })()""")
+        for x, y, scale in points:
+            self.assertGreater(y, 183)
+            self.assertLess(y + 5 + 30 * scale * .22 + .5, 307)
+        for near, far in zip(points, points[1:]):
+            self.assertGreater(near[1], far[1])
+        self.assertLess(points[0][1] - points[1][1], 1)
+
+    def test_shore_projection_is_unchanged_after_switching_from_sea(self):
+        result = self.probe("""(() => {
+          sl.value = 'sea'; waterPoint(0);
+          return ['lake', 'river', 'pond'].map(location => {
+            sl.value = location;
+            return [-10, 0, 100, 500].map(waterPoint);
+          });
+        })()""")
+        for points in result:
+            self.assertEqual(points, [[400, 355, 1.2], [400, 355, 1.2],
+                                      [406, 311.5, .9375], [412, 268, .675]])
+
+    def test_sea_release_starts_at_retrieval_point_and_splashes_outside_boat(self):
+        result = self.probe("""(() => {
+          sl.value = 'sea'; L = {sea: {code: 'sea'}}; S = 'out'; outKeep = false;
+          matchMedia = () => ({matches: true});
+          drawSea = drawBoat = drawFog = drawFirstPersonRod = dayTint = drawWeatherEffects = () => {};
+          const positions = [], splashes = [];
+          Object.assign(g, {
+            setTransform() {}, save() {}, restore() {}, scale() {}, beginPath() {}, stroke() {},
+            translate(x, y) { positions.push([x, y]); },
+            ellipse(x, y) { splashes.push([x, y]); }
+          });
+          drawFish = () => {};
+          outT = 0; draw();
+          outT = .9; draw();
+          return {positions, splashes, landing: waterPoint(0).slice(0, 2)};
+        })()""")
+        self.assertEqual(result['positions'][0], result['landing'])
+        self.assertEqual(result['splashes'], [result['landing']])
+        self.assertLess(result['positions'][0][1], 300)
+        self.assertLess(result['splashes'][0][1], 300)
+
     def test_strength_uses_kilograms_not_species_maximum(self):
         result = self.probe("""(() => {
           setup({weight: 1, max: 8}); update(1/60); const a = sample();
