@@ -158,8 +158,24 @@ function up() {
 }
 btn.onpointerdown = e => { e.preventDefault(); down(); };
 btn.onpointerup = btn.onpointerleave = btn.onpointercancel = up;
-addEventListener('keydown', e => { if (e.code === 'Space' && !e.repeat && !e.target.closest('button, select, input, textarea, a') && !document.querySelector('.modal[style*="flex"]')) { e.preventDefault(); down(); } });
-addEventListener('keyup', e => { if (e.code === 'Space') up(); });
+let spaceHeld = false;
+addEventListener('keydown', e => {
+  if (e.code !== 'Space' || e.ctrlKey || e.metaKey || e.altKey || $('fishing-view').hidden ||
+      !$('auth').hidden || document.querySelector('.modal[style*="flex"]')) return;
+  const target = e.target.closest('button, select, input, textarea, a');
+  if (target && target !== btn && !target.matches('.top nav button')) return;
+  e.preventDefault();
+  if (e.repeat || spaceHeld) return;
+  spaceHeld = true; down();
+});
+addEventListener('keyup', e => {
+  if (e.code !== 'Space' || !spaceHeld) return;
+  spaceHeld = false; e.preventDefault(); up();
+});
+addEventListener('blur', () => {
+  if (!spaceHeld) return;
+  spaceHeld = false; up();
+});
 
 (() => {
   const slider = $('bvolume');

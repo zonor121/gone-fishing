@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 HARNESS = r"""
 const fs = require('node:fs');
 const vm = require('node:vm');
-const elements = new Map();
+const elements = new Map(), listeners = new Map();
 const document = {
   getElementById(id) {
     if (!elements.has(id)) elements.set(id, {
@@ -19,8 +19,19 @@ const document = {
   },
   querySelector: () => null, querySelectorAll: () => [], addEventListener() {}
 };
-const context = vm.createContext({document, addEventListener() {}, volume: 1,
-  currentWeather: () => 'clear'});
+const context = vm.createContext({document, volume: 1, currentWeather: () => 'clear',
+  addEventListener(type, callback) {
+    if (!listeners.has(type)) listeners.set(type, []);
+    listeners.get(type).push(callback);
+  },
+  key(type, overrides = {}) {
+    let prevented = false;
+    const event = {code: 'Space', key: ' ', repeat: false,
+      target: {closest: () => null}, preventDefault() { prevented = true; }, ...overrides};
+    for (const callback of listeners.get(type) || []) callback(event);
+    return prevented;
+  }
+});
 vm.runInContext(fs.readFileSync('static/fish-art.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('static/game.js', 'utf8'), context);
 vm.runInContext(`
@@ -33,6 +44,19 @@ vm.runInContext(`
     tackleLevel = 1; reelLevel = 1;
   }
   function sample() { return {t, d, fatigue, state: S}; }
+  function keyboardTarget(id, tag = 'button') {
+    const target = $(id);
+    target.closest = selector => selector.split(',').some(s => s.trim() === tag) ? target : null;
+    target.matches = selector => selector === '.top nav button' &&
+      ['bplay', 'bguide', 'bquests', 'bach', 'bdiary', 'blb', 'bshop', 'binv', 'btut'].includes(id);
+    return target;
+  }
+  function setupCasting() {
+    R = [{rng: 300}]; sr.value = '0'; sl.value = 'lake'; sb.value = 'worm';
+    Q = {worm: 10}; S = 'idle'; tut = -1;
+    windRangeFactor = () => 1; castWhoosh = () => {};
+    fetch = () => new Promise(() => {});
+  }
 `, context);
 const result = vm.runInContext(fs.readFileSync(0, 'utf8'), context);
 process.stdout.write(JSON.stringify(result));
@@ -45,6 +69,113 @@ class FightTests(unittest.TestCase):
                                 encoding='utf-8', capture_output=True, cwd=ROOT, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads(result.stdout)
+
+    def test_space_starts_casting_from_each_focused_menu_button(self):
+        for button in ('bplay', 'bguide', 'bquests', 'bach', 'bdiary',
+                       'blb', 'bshop', 'binv', 'btut', 'btn'):
+            with self.subTest(button=button):
+                result = self.probe(f"""(() => {{
+                  setupCasting();
+                  const prevented = key('keydown', {{target: keyboardTarget('{button}')}});
+                  return {{state: S, prevented}};
+                }})()""")
+                self.assertEqual(result, {'state': 'charge', 'prevented': True})
+
+    def test_space_release_casts_and_suppresses_a_second_button_click(self):
+        result = self.probe("""(() => {
+          setupCasting();
+          const target = keyboardTarget('bshop');
+          key('keydown', {target});
+          const prevented = key('keyup', {target});
+          return {state: S, prevented};
+        })()""")
+        self.assertEqual(result, {'state': 'fly', 'prevented': True})
+
+    def test_space_hold_does_not_restart_casting_after_retrieval(self):
+        result = self.probe("""(() => {
+          setupCasting(); S = 'wait'; fish = {};
+          const target = keyboardTarget('bshop');
+          const first = key('keydown', {target});
+          const repeat = key('keydown', {target, repeat: true});
+          const duplicate = key('keydown', {target});
+          return {state: S, first, repeat, duplicate};
+        })()""")
+        self.assertEqual(result, {'state': 'idle', 'first': True,
+                                  'repeat': True, 'duplicate': True})
+
+    def test_space_pulls_and_releases_fish_when_focus_moves_to_an_input(self):
+        result = self.probe("""(() => {
+          setup({pulling: 0});
+          key('keydown', {target: keyboardTarget('bshop')});
+          const pulling = hold;
+          const prevented = key('keyup', {target: keyboardTarget('bvolume', 'input')});
+          return {pulling, released: hold, prevented};
+        })()""")
+        self.assertEqual(result, {'pulling': 1, 'released': 0, 'prevented': True})
+
+    def test_space_in_form_controls_and_result_buttons_does_not_interrupt_mouse_reeling(self):
+        for control, tag in (('bvolume', 'input'), ('auth-user', 'input'),
+                             ('sr', 'select'), ('notes', 'textarea'),
+                             ('brand', 'a'), ('keep', 'button'), ('rel', 'button')):
+            with self.subTest(control=control):
+                result = self.probe(f"""(() => {{
+                  setup({{pulling: 1}});
+                  const target = keyboardTarget('{control}', '{tag}');
+                  const pressed = key('keydown', {{target}});
+                  const released = key('keyup', {{target}});
+                  return {{hold, pressed, released}};
+                }})()""")
+                self.assertEqual(result, {'hold': 1, 'pressed': False, 'released': False})
+
+    def test_space_in_an_open_modal_does_not_interrupt_mouse_reeling(self):
+        result = self.probe("""(() => {
+          setup({pulling: 1}); document.querySelector = () => ({});
+          const target = keyboardTarget('bshop');
+          const pressed = key('keydown', {target}), released = key('keyup', {target});
+          return {hold, pressed, released};
+        })()""")
+        self.assertEqual(result, {'hold': 1, 'pressed': False, 'released': False})
+
+    def test_space_outside_fishing_keeps_normal_browser_behavior(self):
+        for blocked in ("$('fishing-view').hidden = true", "$('auth').hidden = false"):
+            with self.subTest(blocked=blocked):
+                result = self.probe(f"""(() => {{
+                  setupCasting(); {blocked};
+                  const pressed = key('keydown'), released = key('keyup');
+                  return {{state: S, pressed, released}};
+                }})()""")
+                self.assertEqual(result, {'state': 'idle', 'pressed': False, 'released': False})
+
+    def test_modified_space_keeps_browser_shortcuts(self):
+        for modifier in ('ctrlKey', 'metaKey', 'altKey'):
+            with self.subTest(modifier=modifier):
+                result = self.probe(f"""(() => {{
+                  setupCasting();
+                  const pressed = key('keydown', {{{modifier}: true}});
+                  const released = key('keyup', {{{modifier}: true}});
+                  return {{state: S, pressed, released}};
+                }})()""")
+                self.assertEqual(result, {'state': 'idle', 'pressed': False, 'released': False})
+
+    def test_losing_window_focus_releases_space_and_allows_the_next_press(self):
+        result = self.probe("""(() => {
+          setup({pulling: 0});
+          const target = keyboardTarget('bshop');
+          key('keydown', {target}); const first = hold;
+          key('blur'); const blurred = hold;
+          key('keydown', {target}); const resumed = hold;
+          key('keyup', {target});
+          return {first, blurred, resumed, released: hold};
+        })()""")
+        self.assertEqual(result, {'first': 1, 'blurred': 0, 'resumed': 1, 'released': 0})
+
+    def test_unpaired_space_release_does_not_release_mouse_reeling(self):
+        result = self.probe("""(() => {
+          setup({pulling: 1});
+          const prevented = key('keyup');
+          return {hold, prevented};
+        })()""")
+        self.assertEqual(result, {'hold': 1, 'prevented': False})
 
     def test_rod_shop_compares_best_owned_rod_to_next_upgrade(self):
         result = self.probe("""(() => {
