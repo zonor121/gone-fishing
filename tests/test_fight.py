@@ -21,6 +21,7 @@ const document = {
 };
 const context = vm.createContext({document, addEventListener() {}, muted: false,
   currentWeather: () => 'clear'});
+vm.runInContext(fs.readFileSync('static/fish-art.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('static/game.js', 'utf8'), context);
 vm.runInContext(`
   function setup({weight = 1, max = 8, resistance = .75, style = 'heavy',
@@ -105,6 +106,84 @@ class FightTests(unittest.TestCase):
         self.assertEqual(result['splashes'], [result['landing']])
         self.assertLess(result['positions'][0][1], 300)
         self.assertLess(result['splashes'][0][1], 300)
+
+    def fish_sizes(self, species, weights, minimum=1, maximum=9, card=False):
+        data = json.dumps({'id': species, 'min': minimum, 'max': maximum})
+        return self.probe(f"""(() => {{
+          fish = {data};
+          const sizes = [], stack = []; let x = 1, y = 1;
+          const gc = {{
+            save() {{ stack.push([x, y]); }}, restore() {{ [x, y] = stack.pop(); }},
+            translate() {{}}, clearRect() {{}},
+            setTransform(a, b, c, d) {{ x = a; y = d; }},
+            scale(a, b) {{ x *= a; y *= b; }}
+          }};
+          paintFishArtwork = () => sizes.push([x, y]);
+          $('cfish').getContext = () => gc;
+          for (w of {json.dumps(weights)}) {{ {'cardFish()' if card else 'drawFish(0, 0, gc)'}; }}
+          return sizes;
+        }})()""")
+
+    def test_pike_grows_mainly_in_length_not_depth(self):
+        small, large = self.fish_sizes(4, [1, 9])
+        length_gain = large[0] / small[0] - 1
+        depth_gain = large[1] / small[1] - 1
+        self.assertGreater(length_gain, .25)
+        self.assertGreater(length_gain, depth_gain * 2)
+        self.assertLess(depth_gain, .25)
+
+    def test_slender_species_gain_more_length_than_depth(self):
+        for species in (4, 7, 11, 12):
+            with self.subTest(species=species):
+                small, large = self.fish_sizes(species, [1, 13.5])
+                self.assertGreater(large[0] / small[0] - 1,
+                                   (large[1] / small[1] - 1) * 1.5)
+
+    def test_deep_bodied_species_gain_more_depth_than_pike(self):
+        small, large = self.fish_sizes(4, [1, 9])
+        pike_gain = large[1] / small[1] - 1
+        for species in (1, 2, 6, 9):
+            with self.subTest(species=species):
+                small, large = self.fish_sizes(species, [1, 9])
+                self.assertGreater(large[1] / small[1] - 1, pike_gain * 2)
+
+    def test_growth_uses_species_minimum_not_only_maximum(self):
+        ordinary = self.fish_sizes(4, [3], minimum=1)[0]
+        smallest = self.fish_sizes(4, [3], minimum=3)[0]
+        self.assertLess(smallest[0], ordinary[0])
+
+    def test_all_species_keep_growing_through_trophy_weights(self):
+        for species in range(1, 13):
+            with self.subTest(species=species):
+                sizes = self.fish_sizes(species, [1, 3, 6, 9, 11, 13.5])
+                for smaller, larger in zip(sizes, sizes[1:]):
+                    self.assertGreater(larger[0], smaller[0])
+                    self.assertGreater(larger[1], smaller[1])
+                self.assertGreater(sizes[-1][0], sizes[-3][0] * 1.05)
+
+    def test_growth_is_smooth_at_ordinary_maximum_weight(self):
+        before, normal, after = self.fish_sizes(4, [8.999, 9, 9.001])
+        for axis in (0, 1):
+            self.assertGreater(normal[axis], before[axis])
+            self.assertGreater(after[axis], normal[axis])
+            self.assertAlmostEqual(normal[axis] - before[axis],
+                                   after[axis] - normal[axis], delta=.000001)
+
+    def test_largest_fish_fit_catch_card_without_separate_squashing(self):
+        for species in range(1, 13):
+            with self.subTest(species=species):
+                x, y = self.fish_sizes(species, [13.5], card=True)[0]
+                self.assertLess(160 * x, 300)
+                self.assertLess(88 * y, 160)
+
+    def test_card_preserves_same_weight_growth_as_scene(self):
+        for species in range(1, 13):
+            with self.subTest(species=species):
+                scene = self.fish_sizes(species, [1, 9, 13.5])
+                cards = self.fish_sizes(species, [1, 9, 13.5], card=True)
+                for scene_size, card_size in zip(scene, cards):
+                    for a, b in zip(scene_size, card_size):
+                        self.assertAlmostEqual(b, a * 3.8)
 
     def test_strength_uses_kilograms_not_species_maximum(self):
         result = self.probe("""(() => {

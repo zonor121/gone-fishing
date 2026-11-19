@@ -3,7 +3,7 @@
 <meta charset="utf-8">
 <title>Проверка отрисовки рыб</title>
 <style>
-body{font:16px system-ui;background:#d7d8ca;color:#243c35;padding:24px}button{padding:12px}iframe{width:100%;height:500px;border:0}pre{white-space:pre-wrap}.gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:20px}.gallery svg,.gallery canvas{display:block;width:100%;height:auto}.weights{display:flex}.weights canvas{width:33.33%}
+body{font:16px system-ui;background:#d7d8ca;color:#243c35;padding:24px}button{padding:12px}iframe{width:100%;height:500px;border:0}pre{white-space:pre-wrap}.gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:20px}.gallery svg,.gallery canvas{display:block;width:100%;height:auto}.weights{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}.weights figure{margin:0}.weights canvas{width:100%}.weights figcaption{text-align:center;font-size:12px}
 </style>
 <h1>Проверка отрисовки рыб</h1>
 <p>Войдите в игру, затем запустите проверку. Наживки, деньги и улов не изменяются.</p>
@@ -45,17 +45,50 @@ document.querySelector('#run').onclick=async()=>{
         marked++;for(let c=0;c<3;c++)delta+=Math.abs(a[i+c]-b[i+c]);alphaDelta+=Math.abs(a[i+3]-b[i+3]);
       }
       check(marked>0&&delta/marked/3<1&&alphaDelta/marked<1,f.name+': одинаковая геометрия и оттенки SVG/Canvas');
+      const stateCanvas=document.createElement('canvas'), stateCtx=stateCanvas.getContext('2d');
+      stateCtx.setTransform(2,1,-1,3,4,6);stateCtx.globalAlpha=.5;stateCtx.fillStyle='#123456';stateCtx.strokeStyle='#654321';stateCtx.lineWidth=3;stateCtx.lineCap='square';stateCtx.lineJoin='bevel';
+      win.paintFishArtwork(stateCtx,f.id);
+      const transform=stateCtx.getTransform();
+      check(transform.a===2&&transform.b===1&&transform.c===-1&&transform.d===3&&transform.e===4&&transform.f===6&&stateCtx.globalAlpha===.5&&stateCtx.fillStyle==='#123456'&&stateCtx.strokeStyle==='#654321'&&stateCtx.lineWidth===3&&stateCtx.lineCap==='square'&&stateCtx.lineJoin==='bevel',f.name+': отрисовка сохраняет настройки контекста');
+      const appearance=E(`FISH_APPEARANCE[${f.id}]`), bodyPath=new Path2D(appearance.body), eyePath=new Path2D(section.querySelector('path[fill$="-iris)"]').getAttribute('d'));
+      const eyeProbe=document.createElement('canvas').getContext('2d'), [ex,ey,er]=appearance.eye;
+      let eyeInside=true;
+      for(let y=ey-er;y<=ey+er;y+=.25)for(let x=ex-er;x<=ex+er;x+=.25){
+        if(eyeProbe.isPointInPath(eyePath,x,y)&&!eyeProbe.isPointInPath(bodyPath,x,y))eyeInside=false;
+      }
+      check(eyeInside,f.name+': глаз находится внутри головы, а не выступает за силуэт');
+      {
+        const material=document.createElement('canvas');material.width=640;material.height=352;
+        const materialCtx=material.getContext('2d');materialCtx.scale(4,4);win.paintFishArtwork(materialCtx,f.id);
+        const path=new Path2D(appearance.body), probe=document.createElement('canvas').getContext('2d');
+        const rows=Array.from({length:88},(_,y)=>y).filter(y=>probe.isPointInPath(path,75,y));
+        const light=y=>{const p=materialCtx.getImageData(300,Math.round(y*4),1,1).data;return p[0]*.2126+p[1]*.7152+p[2]*.0722;};
+        const flank=light((rows[0]+rows.at(-1))/2);
+        check(flank>light(rows[0]+1)+25&&flank>light(rows.at(-1)-1)+25,f.name+': освещённый бок и затемнённые края создают объём');
+      }
+      const silhouette=bounds(canvas);
+      check(silhouette.left>0&&silhouette.top>0&&silhouette.right<canvas.width-1&&silhouette.bottom<canvas.height-1,f.name+': фон прозрачен, силуэт не обрезан');
+      const pathCanvas=document.createElement('canvas'), pathCtx=pathCanvas.getContext('2d');
+      pathCtx.beginPath();pathCtx.rect(1,1,5,5);win.paintFishArtwork(pathCtx,f.id);pathCtx.fillStyle='#ff0000';pathCtx.fill();
+      const pathPixel=pathCtx.getImageData(2,2,1,1).data;
+      check(pathPixel[0]===255&&pathPixel[1]===0&&pathPixel[2]===0&&pathPixel[3]===255,f.name+': отрисовка сохраняет текущий путь контекста');
+      const clipped=document.createElement('canvas'), clippedCtx=clipped.getContext('2d');clipped.width=320;clipped.height=176;
+      clippedCtx.beginPath();clippedCtx.rect(0,0,80,176);clippedCtx.clip();clippedCtx.scale(2,2);win.paintFishArtwork(clippedCtx,f.id);
+      const clippedBounds=bounds(clipped);
+      check(clippedBounds.width>0&&clippedBounds.right<80,f.name+': отрисовка соблюдает отсечение вызывающего контекста');
       const weights=document.createElement('div');weights.className='weights';section.append(weights);
       const sizes=[];
-      for(const weight of [f.min,f.max,f.max*1.5]){
+      for(const weight of [f.min,(f.min+f.max)/2,f.max,f.max*1.5]){
         E(`fish=F.find(f=>f.id===${f.id});w=${weight};cardFish()`);
         const source=win.document.getElementById('cfish'), copy=document.createElement('canvas');copy.width=source.width;copy.height=source.height;
-        copy.getContext('2d').drawImage(source,0,0);weights.append(copy);
+        copy.getContext('2d').drawImage(source,0,0);
+        const cell=document.createElement('figure'), label=document.createElement('figcaption');label.textContent=weight.toFixed(2)+' кг';cell.append(copy,label);weights.append(cell);
         const box=bounds(copy);sizes.push(box);
         check(box.width>0&&box.left>0&&box.top>0&&box.right<copy.width-1&&box.bottom<copy.height-1,f.name+': плавники и хвост помещаются при '+weight.toFixed(2)+' кг');
       }
-      check(sizes[1].width>sizes[0].width&&sizes[2].width===sizes[1].width,f.name+': размер растёт, трофей не обрезается');
-      check(Math.abs(sizes[0].width/sizes[0].height-sizes[1].width/sizes[1].height)<.1,f.name+': пропорции сохранены');
+      check(sizes.slice(1).every((box,i)=>box.width>sizes[i].width&&box.height>sizes[i].height),f.name+': размер непрерывно растёт до трофейного веса');
+      const lengthGrowth=sizes[3].width/sizes[0].width-1, depthGrowth=sizes[3].height/sizes[0].height-1;
+      check([4,7,11,12].includes(f.id)?lengthGrowth>depthGrowth*1.5:depthGrowth>lengthGrowth*.65&&depthGrowth<lengthGrowth*1.4,f.name+': рост длины и толщины соответствует форме вида');
       gallery.append(section);
     }
     result.textContent=lines.join('\n')+'\nПРОВЕРКА ПРОЙДЕНА';

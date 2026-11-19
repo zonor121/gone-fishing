@@ -370,8 +370,12 @@ function bar(x, y, wd, v, lab, col, dz) {
   g.fillStyle = '#fff'; g.font = '12px sans-serif'; g.fillText(lab, x, y - 4);
 }
 function drawFish(px, py, gc = g) {
-  const size = .3 + .17 * Math.min(1, Math.sqrt(w / fish.max));
-  gc.save(); gc.translate(px, py); gc.scale(size, size); gc.translate(-80, -44);
+  const minimum = Math.cbrt(fish.min);
+  const growth = (Math.cbrt(w) - minimum) / (Math.cbrt(fish.max * 1.5) - minimum);
+  const [smallHeight, largeHeight] = FISH_APPEARANCE[fish.id].heightScale;
+  gc.save(); gc.translate(px, py);
+  gc.scale(.3 + .17 * growth, smallHeight + (largeHeight - smallHeight) * growth);
+  gc.translate(-80, -44);
   paintFishArtwork(gc, fish.id);
   gc.restore();
 }

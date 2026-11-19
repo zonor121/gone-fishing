@@ -3,16 +3,20 @@ let guideSection = 'fish';
 function guideLinks(items, kind) {
   return items.map(item => `<button class="guide-link" data-guide-kind="${kind}" data-guide-id="${escapeLocationText(item.code ?? item.id)}">${escapeLocationText(item.name)}</button>`).join('') || '<span>Не указаны</span>';
 }
-function renderGuide() {
+async function renderGuide() {
   $('guide-summary').textContent = `${F.length} видов рыб · ${BL.length} ${BL.length === 1 ? 'приманка' : BL.length < 5 ? 'приманки' : 'приманок'} · ${Object.keys(L).length} водоёма`;
   $('guide-fish').innerHTML = F.map(f => {
     const baits = BL.filter(b => f.baits[b.code] > 0);
-    return `<article class="guide-card" id="guide-fish-${f.id}" aria-labelledby="guide-fish-name-${f.id}"><div class="guide-illustration" role="img" aria-label="${escapeLocationText(f.name)}">${fishIllustration(f)}</div><div class="guide-card-body"><div class="guide-card-title"><h3 tabindex="-1" id="guide-fish-name-${f.id}">${escapeLocationText(f.name)}</h3><span class="guide-price">${Math.round(f.price * .75)}–${Math.round(f.price * 1.75)} ₽ <small>за рыбу по весу</small></span></div><p class="guide-weight">Вес: ${locationWeight(f.min)}–${locationWeight(f.max)} кг · нижняя цена — за самый мелкий вес, верхняя — за самый крупный</p><p class="guide-activity">Клёв: ${activityLabel(f)}</p><dl><dt>Где поймать</dt><dd>${f.locs.map(code => escapeLocationText(L[code]?.name || code)).join(', ') || 'Не указано'}</dd><dt>Подходящие приманки</dt><dd class="guide-links">${guideLinks(baits, 'bait')}</dd></dl></div></article>`;
+    return `<article class="guide-card" id="guide-fish-${f.id}" aria-labelledby="guide-fish-name-${f.id}"><div class="guide-illustration" role="img" aria-label="${escapeLocationText(f.name)}"></div><div class="guide-card-body"><div class="guide-card-title"><h3 tabindex="-1" id="guide-fish-name-${f.id}">${escapeLocationText(f.name)}</h3><span class="guide-price">${Math.round(f.price * .75)}–${Math.round(f.price * 1.75)} ₽ <small>за рыбу по весу</small></span></div><p class="guide-weight">Вес: ${locationWeight(f.min)}–${locationWeight(f.max)} кг · нижняя цена — за самый мелкий вес, верхняя — за самый крупный</p><p class="guide-activity">Клёв: ${activityLabel(f)}</p><dl><dt>Где поймать</dt><dd>${f.locs.map(code => escapeLocationText(L[code]?.name || code)).join(', ') || 'Не указано'}</dd><dt>Подходящие приманки</dt><dd class="guide-links">${guideLinks(baits, 'bait')}</dd></dl></div></article>`;
   }).join('') || '<p>В справочнике пока нет рыб.</p>';
   $('guide-baits').innerHTML = BL.map(b => {
     const fishes = F.filter(f => f.baits[b.code] > 0);
     return `<article class="guide-card guide-bait-card" id="guide-bait-${escapeLocationText(b.code)}" aria-labelledby="guide-bait-name-${escapeLocationText(b.code)}"><div class="guide-card-body"><div class="guide-card-title"><h3 tabindex="-1" id="guide-bait-name-${escapeLocationText(b.code)}">${escapeLocationText(b.name)}</h3><span class="guide-price">${b.price} ₽ <small>за 1 шт.</small></span></div><dl><dt>Можно поймать</dt><dd class="guide-links">${guideLinks(fishes, 'fish')}</dd></dl><p class="guide-weight">Одна приманка расходуется на один заброс.</p></div></article>`;
   }).join('') || '<p>В справочнике пока нет приманок.</p>';
+  for (const f of F) {
+    await new Promise(resolve => setTimeout(resolve, 0));
+    $(`guide-fish-${f.id}`).querySelector('.guide-illustration').innerHTML = fishIllustration(f);
+  }
 }
 function selectGuideSection(section) {
   guideSection = section;

@@ -13,8 +13,9 @@ const fs = require('node:fs'), vm = require('node:vm');
 const context = vm.createContext({});
 vm.runInContext(fs.readFileSync('static/fish-art.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('static/locations.js', 'utf8'), context);
+vm.runInContext(fs.readFileSync('static/guide.js', 'utf8'), context);
 const result = vm.runInContext(fs.readFileSync(0, 'utf8'), context);
-process.stdout.write(JSON.stringify(result));
+Promise.resolve(result).then(value => process.stdout.write(JSON.stringify(value)));
 """
 NAMES = ['Карась', 'Карп', 'Окунь', 'Щука', 'Плотва', 'Лещ', 'Скумбрия',
          'Треска', 'Морской окунь', 'Тунец', 'Налим', 'Форель']
@@ -113,6 +114,55 @@ class FishArtTests(unittest.TestCase):
         root = ET.fromstring(markup)
         self.assertFalse(list(root.iter(SVG+'script')))
         self.assertNotIn('onerror', markup)
+
+    def test_body_cross_sections_follow_straight_and_curved_silhouettes(self):
+        sections = self.probe('['
+            '"M10 10L30 10L30 30L10 30Z",'
+            '"M10 20L30 10L40 20L30 30Z",'
+            '"M10 20Q20 0 30 20L30 30L10 30Z",'
+            '"M10 20C10 0 30 0 30 20L30 30L10 30Z"'
+            '].map(path => fishBodySections(path)[20])')
+        self.assertEqual(sections, [[10, 30], [15, 25], [10, 30], [5, 30]])
+
+    def test_illustrations_render_without_network_or_image_assets(self):
+        drawings = self.illustrations()
+        for markup in drawings:
+            root = ET.fromstring(markup)
+            self.assertTrue(root.find(SVG+'g').findall(SVG+'path'))
+            self.assertFalse(list(root.iter(SVG+'image')))
+            self.assertNotIn('href=', markup)
+
+    def test_guide_yields_between_species_when_animation_frames_are_paused(self):
+        result = self.probe(r'''(async () => {
+            const F = Array.from({length: 12}, (_, i) => ({
+                id: i+1, name: String(i+1), min: 1, max: 2, price: 100,
+                baits: {}, locs: []
+            }));
+            const BL = [], L = {}, nodes = {}, tasks = [];
+            globalThis.F = F; globalThis.BL = BL; globalThis.L = L;
+            globalThis.$ = id => nodes[id] ||= {
+                innerHTML: '', textContent: '',
+                querySelector() { return this; }
+            };
+            globalThis.activityLabel = () => 'Активна';
+            globalThis.requestAnimationFrame = () => {};
+            globalThis.setTimeout = callback => tasks.push(callback);
+            const rendering = renderGuide();
+            const counts = [fishArtCache.size];
+            const cards = (nodes['guide-fish'].innerHTML.match(/<article /g) || []).length;
+            for (let i=0; i<12 && tasks.length; i++) {
+                tasks.shift()();
+                await Promise.resolve();
+                counts.push(fishArtCache.size);
+            }
+            if (counts.length !== 13) return {counts, cards, drawings: []};
+            await rendering;
+            return {counts, cards, drawings: F.map(f => nodes[`guide-fish-${f.id}`]?.innerHTML)};
+        })()''')
+        self.assertEqual(result['cards'], 12)
+        self.assertEqual(result['counts'], list(range(13)))
+        for markup in result['drawings']:
+            self.assertTrue(ET.fromstring(markup).find(SVG+'g').findall(SVG+'path'))
 
     def test_artwork_is_stable_between_renders(self):
         drawings = self.probe('Array.from({length: 3}, () => '
