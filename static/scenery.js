@@ -2,7 +2,8 @@
 const landscape = document.createElement('canvas');
 landscape.width = 1600; landscape.height = 840;
 const scenery = landscape.getContext('2d');
-let landscapeKey = '', landscapeLighting = '';
+let landscapeKey = '', landscapeWeather = '';
+const landscapeFrames = new Map();
 const noise = n => { const v = Math.sin(n * 127.1 + 311.7) * 43758.5453; return v - Math.floor(v); };
 function rgbOf(c) {
   if (c[0] === '#') { const x = parseInt(c.slice(1), 16); return [(x >> 16) & 255, (x >> 8) & 255, x & 255]; }
@@ -49,21 +50,33 @@ const PALETTES = {
     sparkle: '205,225,245', waveLight: '#7f95ad', waveDark: '#050d14', mist: .05
   }
 };
-function getPalette() {
-  const part = typeof currentDayPart === 'function' ? currentDayPart() : 'day';
+function getPalette(phase) {
+  const blend = phase ? {part: phase, next: phase, amount: 0}
+    : typeof currentDayBlend === 'function' ? currentDayBlend()
+    : {part: typeof currentDayPart === 'function' ? currentDayPart() : 'day', amount: 0};
+  const {part, amount} = blend, next = blend.next || part;
   const wx = typeof currentWeather === 'function' ? currentWeather() : 'clear';
-  const p = PALETTES[part] || PALETTES.day;
+  const p = PALETTES[part], q = PALETTES[next];
   const wash = wx === 'rain' ? ['#5c6a70', .38] : wx === 'fog' ? ['#b7c0ba', .34] : wx === 'wind' ? ['#8a9590', .08] : null;
-  const t = c => wash ? mix(c, wash[0], wash[1]) : c;
-  return { part, wx,
-    sky: p.sky.map(t), ridges: p.ridges.map(t), trees: p.trees.map(t), bank: t(p.bank),
-    water: p.water.map(t), seaWater: p.seaWater.map(t), cloud: p.cloud.map(t), haze: t(p.haze),
-    sun: p.sun, halo: p.halo, sparkle: p.sparkle,
-    waveLight: t(p.waveLight), waveDark: t(p.waveDark),
+  const tint = c => wash ? mix(c, wash[0], wash[1]) : c;
+  const color = (a, b) => amount ? mix(tint(a), tint(b), amount) : tint(a);
+  const colors = key => p[key].map((c, i) => color(c, q[key][i]));
+  const scalar = (a, b) => a * (1 - amount) + b * amount;
+  const night = scalar(part === 'night' ? 1 : 0, next === 'night' ? 1 : 0);
+  const dim = phase => phase === 'night' ? .5 : phase === 'evening' ? .15 : 0;
+  const foregroundDim = phase => phase === 'night' ? .45 : phase === 'evening' ? .12 : 0;
+  return {part, next, amount, wx, night,
+    sky: colors('sky'), ridges: colors('ridges'), trees: colors('trees'), bank: color(p.bank, q.bank),
+    water: colors('water'), seaWater: colors('seaWater'), cloud: colors('cloud'), haze: color(p.haze, q.haze),
+    sun: [...p.sun.slice(0, 3).map((v, i) => scalar(v, q.sun[i])), mix(p.sun[3], q.sun[3], amount)],
+    halo: rgbOf(mix(p.halo, q.halo, amount)).join(','),
+    sparkle: rgbOf(mix(p.sparkle, q.sparkle, amount)).join(','),
+    waveLight: color(p.waveLight, q.waveLight), waveDark: color(p.waveDark, q.waveDark),
+    environmentDim: scalar(dim(part), dim(next)), foregroundDim: scalar(foregroundDim(part), foregroundDim(next)),
     celestialAlpha: wx === 'rain' || wx === 'fog' ? .12 : 1,
-    stars: part === 'night' && (wx === 'clear' || wx === 'wind'),
+    stars: night > 0 && (wx === 'clear' || wx === 'wind'),
     lit: wx !== 'rain' && wx !== 'fog',
-    mist: wx === 'fog' ? .3 : (p.mist || 0) };
+    mist: wx === 'fog' ? .3 : scalar(p.mist, q.mist)};
 }
 
 function tree(c, x, y, h, color, pine) {
@@ -84,8 +97,7 @@ function tree(c, x, y, h, color, pine) {
     }
   }
 }
-function paintSky(c, horizon, treeLine) {
-  const P = getPalette();
+function paintSky(c, horizon, treeLine, P = getPalette()) {
   const sky = c.createLinearGradient(0, 0, 0, horizon);
   sky.addColorStop(0, P.sky[0]); sky.addColorStop(.6, P.sky[1]); sky.addColorStop(1, P.sky[2]);
   c.fillStyle = sky; c.fillRect(0, 0, 800, horizon + 1);
@@ -130,12 +142,11 @@ function paintSky(c, horizon, treeLine) {
 }
 const reflectedBank = document.createElement('canvas');
 reflectedBank.width=1600;reflectedBank.height=840;
-function paintLandscape(l) {
+function paintLandscape(l, P = getPalette()) {
   const c=scenery;c.setTransform(2,0,0,2,0,0);
   c.clearRect(0,0,800,420);
-  if(l.code==='sea'){paintSea(c);return;}
-  const P=getPalette();
-  paintSky(c,190,true);
+  if(l.code==='sea'){paintSea(c,P);return;}
+  paintSky(c,190,true,P);
   if(l.code==='pond') {
     // Пруд замкнут: вместо дальних гряд — стена хвойного леса в три яруса.
     for(let layer=0;layer<3;layer++) {
@@ -318,22 +329,43 @@ function drawWaterSurface(time, sea=false, current=false) {
     }
   }
   // Дрожащая дорожка света следует за солнцем/луной; с расстоянием штрихи мельче.
-  const sx=P.sun[0], count=P.lit?(P.part==='night'?60:95):0;
+  const sx=P.sun[0], count=P.lit?95:0;
   for(let i=0;i<count;i++) {
     const z=noise(i+1400),y=190+z*z*230;
     const x=sx+(noise(i+1500)-.5)*(16+z*z*190)+Math.sin(time*1.2+i)*z*5;
-    g.fillStyle=`rgba(${P.sparkle},${(.05+noise(i+42)*.25)*(.65+Math.sin(time*2+i)*.35)})`;
+    const visibility=i<60?1:1-P.night;
+    g.fillStyle=`rgba(${P.sparkle},${(.05+noise(i+42)*.25)*(.65+Math.sin(time*2+i)*.35)*visibility})`;
     g.fillRect(x,y,1+z*z*22,.5+z*.5);
+  }
+}
+function drawLandscape(l, P) {
+  if (landscapeKey !== l.code || landscapeWeather !== P.wx) {
+    landscapeFrames.clear(); landscapeKey = l.code; landscapeWeather = P.wx;
+  }
+  const phases = P.amount > 0 ? [P.part, P.next] : [P.part];
+  for (const phase of landscapeFrames.keys()) {
+    if (!phases.includes(phase)) landscapeFrames.delete(phase);
+  }
+  for (const phase of phases) {
+    if (!landscapeFrames.has(phase)) {
+      paintLandscape(l, getPalette(phase));
+      const frame = document.createElement('canvas'); frame.width = 1600; frame.height = 840;
+      frame.getContext('2d').drawImage(landscape, 0, 0);
+      landscapeFrames.set(phase, frame);
+    }
+  }
+  g.drawImage(landscapeFrames.get(P.part), 0, 0, 800, 420);
+  if (P.amount > 0) {
+    g.save(); g.globalAlpha = P.amount;
+    g.drawImage(landscapeFrames.get(P.next), 0, 0, 800, 420); g.restore();
   }
 }
 function drawEnvironment(l, time) {
   const P=getPalette();
-  const lighting=currentDayPart()+':'+currentWeather();
-  if(landscapeKey!==sl.value||landscapeLighting!==lighting){paintLandscape(l);landscapeKey=sl.value;landscapeLighting=lighting;}
-  g.drawImage(landscape,0,0,800,420);
+  drawLandscape(l,P);
   drawWaterSurface(time,false,l.current);
   const wind=typeof currentWeather==='function'&&currentWeather()==='wind'?2.5:1;
-  const dim=currentDayPart()==='night'?.5:currentDayPart()==='evening'?.15:0;
+  const dim=P.environmentDim;
   const reedDark=P.water[3];
   const reedCount=l.code==='lake'?28:l.code==='pond'?50:45;
   for(let i=0;i<reedCount;i++) {
@@ -351,19 +383,16 @@ function drawEnvironment(l, time) {
       if(i%4===0){g.strokeStyle=mix('#54432f',reedDark,dim);g.lineWidth=2.3;g.beginPath();g.moveTo(x+sway,y-h);g.lineTo(x+sway,y-h+10);g.stroke();}
     }
   }
-  if(currentDayPart()!=='night'&&currentWeather()!=='rain') {
-    g.strokeStyle='rgba(48,65,62,.6)';g.lineWidth=.8;
+  if(P.night<1&&P.wx!=='rain') {
+    g.strokeStyle=rgba('#30413e',.6*(1-P.night));g.lineWidth=.8;
     for(let i=0;i<3;i++){const x=260+i*21+Math.sin(time*.08)*15,y=65+i%2*9;g.beginPath();g.moveTo(x-4,y);g.quadraticCurveTo(x-2,y-2,x,y);g.quadraticCurveTo(x+2,y-2,x+5,y-1);g.stroke();}
   }
 }
-const dockTexture=document.createElement('canvas');dockTexture.width=1600;dockTexture.height=840;
-let dockReady=false, dockLighting='';
-function drawFirstPersonDock() {
-  const lighting=currentDayPart()+':'+currentWeather();
-  if(!dockReady||dockLighting!==lighting) {
-    const P=getPalette(), dim=P.part==='night'?.5:P.part==='evening'?.15:0;
-    const D=c=>mix(c,'#141c26',dim);
-    const c=dockTexture.getContext('2d');c.setTransform(2,0,0,2,0,0);c.clearRect(0,0,800,420);
+const dockFrames = new Map();
+const dockBlend = document.createElement('canvas'); dockBlend.width = 1600; dockBlend.height = 108;
+function paintDock(frame, P) {
+    const D=c=>mix(c,'#141c26',P.environmentDim);
+    const c=frame.getContext('2d');c.setTransform(2,0,0,2,0,0);c.clearRect(0,0,800,420);
     shape(c,[[202,367],[598,367],[800,420],[0,420]],D('#302c22'));
     for(let j=0;j<7;j++) {
       const a=j/7,b=(j+1)/7,y=367+53*a*a,bottom=367+53*b*b,left=202*(1-a*a),right=800-left;
@@ -382,9 +411,30 @@ function drawFirstPersonDock() {
       c.restore();
     }
     for(const x of [260,400,540]){c.strokeStyle='rgba(38,31,22,.65)';c.lineWidth=.8;c.beginPath();c.moveTo(x,367);c.lineTo(400+(x-400)*2.1,420);c.stroke();}
-    dockReady=true;dockLighting=lighting;
+}
+function drawFirstPersonDock() {
+  const P = getPalette(), phases = P.amount > 0 ? [P.part, P.next] : [P.part];
+  for (const phase of dockFrames.keys()) {
+    if (!phases.includes(phase)) dockFrames.delete(phase);
   }
-  g.drawImage(dockTexture,0,0,800,420);
+  for (const phase of phases) {
+    if (!dockFrames.has(phase)) {
+      const frame = document.createElement('canvas'); frame.width = 1600; frame.height = 840;
+      paintDock(frame, getPalette(phase)); dockFrames.set(phase, frame);
+    }
+  }
+  if (P.amount > 0) {
+    const c = dockBlend.getContext('2d');
+    // Сумма весов сохраняет прозрачность сглаженных краёв понтона.
+    c.globalCompositeOperation = 'copy'; c.globalAlpha = 1 - P.amount;
+    c.drawImage(dockFrames.get(P.part), 0, 732, 1600, 108, 0, 0, 1600, 108);
+    c.globalCompositeOperation = 'lighter'; c.globalAlpha = P.amount;
+    c.drawImage(dockFrames.get(P.next), 0, 732, 1600, 108, 0, 0, 1600, 108);
+    c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1;
+    g.drawImage(dockBlend, 0, 366, 800, 54);
+  } else {
+    g.drawImage(dockFrames.get(P.part), 0, 0, 800, 420);
+  }
   drawDockWet();
 }
 
@@ -421,7 +471,7 @@ function drawFirstPersonRod(tx, ty, time) {
   const lift = S==='charge' ? pw*30 : S==='fly' ? Math.sin(Math.min(1,cast)*Math.PI)*18 : 0;
   const hx=590, hy=374-lift;
   g.save();g.lineCap='round';
-  const P=getPalette(), dim=P.part==='night'?.45:P.part==='evening'?.12:0;
+  const P=getPalette(), dim=P.foregroundDim;
   const D=c=>mix(c,'#141c26',dim);
   const sleeve=g.createLinearGradient(580,330,710,430);
   sleeve.addColorStop(0,D('#718064'));sleeve.addColorStop(.5,D('#495d46'));sleeve.addColorStop(1,D('#283f35'));

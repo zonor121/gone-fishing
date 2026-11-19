@@ -1,7 +1,6 @@
 // Море и лодка используют ту же перспективу и освещение, что и пресные водоёмы.
-function paintSea(c) {
-  const P=getPalette();
-  paintSky(c,183);
+function paintSea(c, P = getPalette()) {
+  paintSky(c,183,false,P);
   shape(c,[[0,181],[24,171],[46,175],[66,169],[102,183]],mix(P.ridges[0],'#8a9fa4',.35));
   // Скалистый мыс на правом горизонте.
   shape(c,[[800,183],[800,164],[772,166],[738,170],[706,176],[680,183]],mix(P.ridges[1],'#6e7d80',.4));
@@ -21,17 +20,16 @@ function paintSea(c) {
   }
 }
 function drawSea(time) {
-  const lighting=currentDayPart()+':'+currentWeather();
-  if(landscapeKey!=='sea'||landscapeLighting!==lighting){scenery.setTransform(2,0,0,2,0,0);paintSea(scenery);landscapeKey='sea';landscapeLighting=lighting;}
-  g.drawImage(landscape,0,0,800,420);
+  const P=getPalette();
+  drawLandscape({code:'sea'},P);
   drawWaterSurface(time,true);
-  if(currentDayPart()!=='night'&&currentWeather()!=='rain') {
-    g.strokeStyle='#435960';g.lineWidth=.7;
+  if(P.night<1&&P.wx!=='rain') {
+    g.strokeStyle=rgba('#435960',1-P.night);g.lineWidth=.7;
     for(let i=0;i<4;i++){const x=(120+i*137+time*3)%850,y=65+Math.sin(time+i)*3;g.beginPath();g.moveTo(x-5,y);g.quadraticCurveTo(x-2,y-4,x,y);g.quadraticCurveTo(x+3,y-4,x+6,y);g.stroke();}
   }
 }
 function drawBoat(time) {
-  const P=getPalette(), dim=P.part==='night'?.45:P.part==='evening'?.12:0;
+  const P=getPalette(), dim=P.foregroundDim;
   const D=c=>mix(c,'#141c26',dim);
   const tilt=Math.sin(time*.85)*.012,bob=Math.sin(time*1.3)*2.5;
   g.translate(400,390+bob);g.rotate(tilt);g.translate(-400,-390);

@@ -21,6 +21,17 @@ function currentDayPart() {
   const shift = Math.ceil(-left / 180);
   return DAY_PARTS[(DAY_PARTS.indexOf(WORLD.day_part) + shift) % 4];
 }
+function currentDayBlend() {
+  if (!WORLD) return {part: 'day', next: 'day', amount: 0};
+  const elapsed = (Date.now() - worldSyncAt) / 1000;
+  const position = DAY_PARTS.indexOf(WORLD.day_part) * 180 + 180 - WORLD.day_part_left + elapsed;
+  const cycle = ((position % 720) + 720) % 720;
+  const index = Math.floor(cycle / 180);
+  const progress = Math.max(0, (cycle % 180 - 90) / 90);
+  // Микрошаги ниже точности цвета не должны менять округление на границе фаз.
+  const amount = Math.round(progress * progress * (3 - 2 * progress) * 1e6) / 1e6;
+  return {part: DAY_PARTS[index], next: DAY_PARTS[(index + 1) % 4], amount};
+}
 function currentWeather() { return WORLD ? WORLD.weather : 'clear'; }
 
 // Активна ли рыба сейчас: по времени суток и погоде (null — клюёт всегда).
@@ -132,16 +143,19 @@ function currentViewName() {
 
 // ---------- эффекты погоды и времени суток на сцене ----------
 function dayTint(g2) {
-  const part = currentDayPart();
-  // Пейзаж уже освещён палитрой (scenery.js); лёгкий слой лишь согласует передний план.
-  const tints = { morning: 'rgba(255,220,150,.05)', day: null, evening: 'rgba(255,140,60,.08)', night: 'rgba(10,18,44,.22)' };
-  if (tints[part]) { g2.fillStyle = tints[part]; g2.fillRect(0, 0, 800, 420); }
+  const {part, next, amount} = currentDayBlend();
+  const tints = {morning: [255,220,150,.05], day: [0,0,0,0], evening: [255,140,60,.08], night: [10,18,44,.22]};
+  const a = tints[part], b = tints[next], alpha = a[3] * (1 - amount) + b[3] * amount;
+  if (alpha > 0) {
+    const rgb = a.slice(0, 3).map((v, i) => Math.round((v * a[3] * (1 - amount) + b[i] * b[3] * amount) / alpha));
+    g2.fillStyle = `rgba(${rgb.join(',')},${alpha})`; g2.fillRect(0, 0, 800, 420);
+  }
   const v = g2.createRadialGradient(400, 210, 180, 400, 210, 520);
   v.addColorStop(0, 'rgba(8,14,18,0)'); v.addColorStop(1, 'rgba(8,14,18,.22)');
   g2.fillStyle = v; g2.fillRect(0, 0, 800, 420);
 }
 function drawWeatherEffects(g2, time2) {
-  const wx = currentWeather(), part = currentDayPart();
+  const wx = currentWeather(), night = getPalette().night;
   if (wx === 'rain') {
     drawRain(g2, time2);
   } else if (wx === 'wind') {
@@ -151,22 +165,35 @@ function drawWeatherEffects(g2, time2) {
       g2.beginPath(); g2.moveTo(x, y); g2.quadraticCurveTo(x + 34, y - 4, x + 70, y + 2); g2.stroke();
     }
   }
-  if (part === 'night' && (S === 'wait' || S === 'bite')) {
+  if (night > 0 && (S === 'wait' || S === 'bite')) {
     // Ночью поплавок подсвечен, чтобы оставаться заметным.
     const p = waterPoint(bx);
     p[0] += windDrift(time2);
     p[1] += S === 'bite' ? 5 + Math.sin(tt*30)*3 : Math.sin(time2*2)*1.3;
     const glow = g2.createRadialGradient(p[0], p[1], 2, p[0], p[1], 26);
-    glow.addColorStop(0, 'rgba(255,214,120,.5)'); glow.addColorStop(1, 'rgba(255,214,120,0)');
+    glow.addColorStop(0, `rgba(255,214,120,${.5 * night})`); glow.addColorStop(1, 'rgba(255,214,120,0)');
     g2.fillStyle = glow; g2.beginPath(); g2.arc(p[0], p[1], 26, 0, 7); g2.fill();
   }
 }
 // Туман: вуаль у горизонта и два дрейфующих слоя мягких хлопььев вместо плоских эллипсов.
 // Рисуется до поплавка и снастей: дальность тонет, передний план остаётся читаемым.
-let fogTex = null, fogTexKey = '';
+function weatherTexture(mask) {
+  const canvas = document.createElement('canvas'); canvas.width = mask.width; canvas.height = mask.height;
+  return {mask, canvas, color: null};
+}
+function tintWeatherTexture(texture, color) {
+  if (texture.color === color) return;
+  const c = texture.canvas.getContext('2d');
+  c.clearRect(0, 0, texture.canvas.width, texture.canvas.height);
+  c.drawImage(texture.mask, 0, 0);
+  c.globalCompositeOperation = 'source-in'; c.fillStyle = color;
+  c.fillRect(0, 0, texture.canvas.width, texture.canvas.height);
+  c.globalCompositeOperation = 'source-over'; texture.color = color;
+}
+let fogTex = null;
 function fogColor() {
   const P = getPalette();
-  return P.part === 'night' ? mix(P.haze, '#8fa0b4', .4) : mix(P.haze, '#e9eee9', .65);
+  return mix(mix(P.haze, '#e9eee9', .65), mix(P.haze, '#8fa0b4', .4), P.night);
 }
 function buildFogTex(col) {
   const mk = (h, n, seed, rMax, squash) => {
@@ -190,7 +217,8 @@ function buildFogTex(col) {
 function drawFog(g2, time2) {
   if (currentWeather() !== 'fog') return;
   const col = fogColor();
-  if (fogTexKey !== col) { fogTex = buildFogTex(col); fogTexKey = col; }
+  if (!fogTex) fogTex = buildFogTex('#ffffff').map(weatherTexture);
+  fogTex.forEach(texture => tintWeatherTexture(texture, col));
   const veil = g2.createLinearGradient(0, 108, 0, 262);
   veil.addColorStop(0, rgba(col, 0)); veil.addColorStop(.48, rgba(col, .55)); veil.addColorStop(1, rgba(col, 0));
   g2.fillStyle = veil; g2.fillRect(0, 108, 800, 154);
@@ -201,8 +229,8 @@ function drawFog(g2, time2) {
     g2.drawImage(tex, 960 - off, y + bob, 960, h);
     g2.globalAlpha = 1;
   };
-  tile(fogTex[0], 128, 124, 6, 1, Math.sin(time2 * .23) * 2);
-  tile(fogTex[1], 222, 94, 14, .7, Math.sin(time2 * .35 + 1) * 3);
+  tile(fogTex[0].canvas, 128, 124, 6, 1, Math.sin(time2 * .23) * 2);
+  tile(fogTex[1].canvas, 222, 94, 14, .7, Math.sin(time2 * .35 + 1) * 3);
 }
 // Дождь: три слоя глубины (дальний мелкий/тусклый → ближний крупный/яркий),
 // tapered-штрихи из предрендеренного спрайта, наклон от ветра и всплески на воде.
@@ -211,10 +239,10 @@ const RAIN_LAYERS = [
   { n: 34, seed: 940, speed: 470, len: 18, w: .95, alpha: .40, slant: .16 },
   { n: 22, seed: 980, speed: 660, len: 27, w: 1.25, alpha: .58, slant: .22 }
 ];
-let rainTex = null, rainTexKey = '';
+let rainTex = null;
 function rainColor() {
   const P = getPalette();
-  return mix(P.part === 'night' ? '#7f93ad' : '#cfe0ee', P.haze, .25);
+  return mix(mix('#cfe0ee', '#7f93ad', P.night), P.haze, .25);
 }
 function buildRainStreak(col) {
   const cv = document.createElement('canvas'); cv.width = 4; cv.height = 36;
@@ -227,7 +255,8 @@ function buildRainStreak(col) {
 }
 function drawRain(g2, time2) {
   const col = rainColor();
-  if (rainTexKey !== col) { rainTex = buildRainStreak(col); rainTexKey = col; }
+  if (!rainTex) rainTex = weatherTexture(buildRainStreak('#ffffff'));
+  tintWeatherTexture(rainTex, col);
   const gust = Math.sin(time2 * .3) * .04;
   const wrap = (v, m) => ((v % m) + m) % m;
   for (const L of RAIN_LAYERS) {
@@ -239,7 +268,7 @@ function drawRain(g2, time2) {
       g2.save();
       g2.globalAlpha = L.alpha * (.7 + noise(i + L.seed + 3) * .5);
       g2.translate(x, y); g2.rotate(ang); g2.scale(L.w, len / 36);
-      g2.drawImage(rainTex, -2, -36);
+      g2.drawImage(rainTex.canvas, -2, -36);
       g2.restore();
     }
   }
