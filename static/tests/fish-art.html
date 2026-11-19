@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ru">
+<meta charset="utf-8">
+<title>Проверка отрисовки рыб</title>
+<style>
+body{font:16px system-ui;background:#d7d8ca;color:#243c35;padding:24px}button{padding:12px}iframe{width:100%;height:500px;border:0}pre{white-space:pre-wrap}.gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:20px}.gallery svg,.gallery canvas{display:block;width:100%;height:auto}.weights{display:flex}.weights canvas{width:33.33%}
+</style>
+<h1>Проверка отрисовки рыб</h1>
+<p>Войдите в игру, затем запустите проверку. Наживки, деньги и улов не изменяются.</p>
+<button id="run">Проверить 12 видов</button>
+<pre id="result" role="status">Ожидание запуска</pre>
+<div class="gallery" id="gallery"></div>
+<iframe src="/" title="Игра"></iframe>
+<script>
+const frame=document.querySelector('iframe'), result=document.querySelector('#result'), gallery=document.querySelector('#gallery');
+const bounds=canvas=>{
+  const pixels=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
+  let left=canvas.width,top=canvas.height,right=-1,bottom=-1;
+  for(let y=0;y<canvas.height;y++)for(let x=0;x<canvas.width;x++)if(pixels[(y*canvas.width+x)*4+3]>8){
+    left=Math.min(left,x);right=Math.max(right,x);top=Math.min(top,y);bottom=Math.max(bottom,y);
+  }
+  return {left,top,right,bottom,width:right-left+1,height:bottom-top+1};
+};
+document.querySelector('#run').onclick=async()=>{
+  const win=frame.contentWindow, E=source=>win.eval(source), lines=[];
+  const check=(ok,text)=>{if(!ok)throw Error(text);lines.push('OK: '+text);result.textContent=lines.join('\n');};
+  let previous;
+  gallery.replaceChildren();
+  try{
+    check(E('S==="idle"&&F.length===12'),'Игра загружена, доступны 12 видов');
+    previous=E('({fish,w,hidden:$("fishing-view").hidden})');
+    E('$("fishing-view").hidden=true');
+    for(const f of E('F')){
+      const section=document.createElement('section'), title=document.createElement('h2');title.textContent=f.name;section.append(title);
+      const markup=win.fishIllustration(f);section.insertAdjacentHTML('beforeend',markup);
+      const canvas=document.createElement('canvas');canvas.width=320;canvas.height=176;
+      const ctx=canvas.getContext('2d');ctx.scale(2,2);win.paintFishArtwork(ctx,f.id);section.append(canvas);
+      const image=new Image(), url=URL.createObjectURL(new Blob([markup],{type:'image/svg+xml'}));
+      try{image.src=url;await image.decode();}finally{URL.revokeObjectURL(url);}
+      const svgCanvas=document.createElement('canvas');svgCanvas.width=320;svgCanvas.height=176;
+      const svgCtx=svgCanvas.getContext('2d');svgCtx.drawImage(image,0,0,320,176);
+      const a=ctx.getImageData(0,0,320,176).data,b=svgCtx.getImageData(0,0,320,176).data;
+      let delta=0,alphaDelta=0,marked=0;
+      for(let i=0;i<a.length;i+=4)if(a[i+3]||b[i+3]){
+        marked++;for(let c=0;c<3;c++)delta+=Math.abs(a[i+c]-b[i+c]);alphaDelta+=Math.abs(a[i+3]-b[i+3]);
+      }
+      check(marked>0&&delta/marked/3<1&&alphaDelta/marked<1,f.name+': одинаковая геометрия и оттенки SVG/Canvas');
+      const weights=document.createElement('div');weights.className='weights';section.append(weights);
+      const sizes=[];
+      for(const weight of [f.min,f.max,f.max*1.5]){
+        E(`fish=F.find(f=>f.id===${f.id});w=${weight};cardFish()`);
+        const source=win.document.getElementById('cfish'), copy=document.createElement('canvas');copy.width=source.width;copy.height=source.height;
+        copy.getContext('2d').drawImage(source,0,0);weights.append(copy);
+        const box=bounds(copy);sizes.push(box);
+        check(box.width>0&&box.left>0&&box.top>0&&box.right<copy.width-1&&box.bottom<copy.height-1,f.name+': плавники и хвост помещаются при '+weight.toFixed(2)+' кг');
+      }
+      check(sizes[1].width>sizes[0].width&&sizes[2].width===sizes[1].width,f.name+': размер растёт, трофей не обрезается');
+      check(Math.abs(sizes[0].width/sizes[0].height-sizes[1].width/sizes[1].height)<.1,f.name+': пропорции сохранены');
+      gallery.append(section);
+    }
+    result.textContent=lines.join('\n')+'\nПРОВЕРКА ПРОЙДЕНА';
+  }catch(error){result.textContent=lines.join('\n')+'\nОШИБКА: '+error.message;}
+  finally{
+    if(previous){win.__fishArtPrevious=previous;E('fish=__fishArtPrevious.fish;w=__fishArtPrevious.w;$("fishing-view").hidden=__fishArtPrevious.hidden');delete win.__fishArtPrevious;}
+  }
+};
+</script>
+</html>

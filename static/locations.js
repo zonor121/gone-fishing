@@ -2,12 +2,8 @@
 const escapeLocationText = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const locationWeight = value => value.toLocaleString('ru-RU', {maximumFractionDigits: 2});
 const locationPreviews = {};
-let fishIllustrationId = 0;
 function fishIllustration(f) {
-  const color = escapeLocationText(f.color), id = `fish-shine-${++fishIllustrationId}`;
-  const long = f.name.includes('Щука'), ry = long ? 13 : f.name.includes('Лещ') || f.name.includes('Карась') ? 26 : 19;
-  // SVG остаётся чётким на телефоне; чешуя, жабры и плавники различимы без внешних файлов.
-  return `<svg viewBox="0 0 160 88" aria-hidden="true" focusable="false"><defs><linearGradient id="${id}" x2="0" y2="1"><stop stop-color="#455747"/><stop offset=".45" stop-color="${color}"/><stop offset="1" stop-color="#e0ddbb"/></linearGradient><pattern id="scales-${id}" width="9" height="7" patternUnits="userSpaceOnUse"><path d="M0 0Q5 8 9 0" fill="none" stroke="#263c32" stroke-opacity=".27" stroke-width=".7"/></pattern></defs><g transform="translate(0 44)"><path d="M113 0L149 -23L142 0L149 23Z" fill="${color}" stroke="#a49c75"/><path d="M58 ${-ry+4}L75 ${-ry-13}L101 ${-ry+7}M63 ${ry-5}L77 ${ry+11}L95 ${ry-5}" fill="${color}" stroke="#b9ad7f"/><ellipse cx="73" rx="52" ry="${ry}" fill="url(#${id})" stroke="#a5aa8f"/><ellipse cx="73" rx="52" ry="${ry}" fill="url(#scales-${id})"/><path d="M43 ${-ry*.75}Q54 0 43 ${ry*.75}M64 3L85 ${ry+6}L88 3" fill="none" stroke="#68725d"/><circle cx="32" cy="-5" r="4" fill="#e6d9a0"/><circle cx="32" cy="-5" r="2.3" fill="#182d28"/><path d="M21 3L29 4" stroke="#47594d"/></g></svg>`;
+  return fishSvg(f);
 }
 function fishTile(f, caption) {
   return `<div class="location-fish">${fishIllustration(f)}<span>${escapeLocationText(f.name)}</span>${caption ? `<small>${caption}</small>` : ''}</div>`;
