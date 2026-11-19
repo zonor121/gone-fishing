@@ -12,14 +12,14 @@ const elements = new Map();
 const document = {
   getElementById(id) {
     if (!elements.has(id)) elements.set(id, {
-      value: '0', hidden: id === 'auth', style: {}, textContent: '',
+      value: '0', hidden: id === 'auth', style: {setProperty() {}}, textContent: '',
       getContext: () => ({}), addEventListener() {}, setAttribute() {}
     });
     return elements.get(id);
   },
   querySelector: () => null, querySelectorAll: () => [], addEventListener() {}
 };
-const context = vm.createContext({document, addEventListener() {}, muted: false,
+const context = vm.createContext({document, addEventListener() {}, volume: 1,
   currentWeather: () => 'clear'});
 vm.runInContext(fs.readFileSync('static/fish-art.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('static/game.js', 'utf8'), context);

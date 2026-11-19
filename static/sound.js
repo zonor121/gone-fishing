@@ -1,25 +1,24 @@
 // Звон колокольчиков при поклёвке: файл sounds/collar-bell.mp3, фолбэк — синтез WebAudio.
 let audioCtx = null;
 let bellBuf = null, bellLoading = false;
-// Общий выход всех звуков: мут гасит сразу и эмбиент, и разовые звуки, и катушку.
 let masterGain = null;
-let muted = localStorage.getItem('sb-muted') === '1';
+const savedVolume = Number(localStorage.getItem('sb-volume') ?? 1);
+let volume = Number.isFinite(savedVolume) ? Math.max(0, Math.min(1, savedVolume)) : 1;
 function master() {
   if (!masterGain) {
     masterGain = audioCtx.createGain();
-    masterGain.gain.value = muted ? 0 : 1;
+    masterGain.gain.value = volume;
     masterGain.connect(audioCtx.destination);
   }
   return masterGain;
 }
-function setMuted(m) {
-  muted = m;
-  localStorage.setItem('sb-muted', m ? '1' : '0');
+function setVolume(value) {
+  volume = value;
+  localStorage.setItem('sb-volume', String(volume));
   if (!masterGain || !audioCtx) return;
   const t = audioCtx.currentTime;
-  masterGain.gain.cancelScheduledValues(t);
-  masterGain.gain.setValueAtTime(masterGain.gain.value, t);
-  masterGain.gain.linearRampToValueAtTime(m ? 0 : 1, t + .15);
+  masterGain.gain.cancelAndHoldAtTime(t);
+  masterGain.gain.linearRampToValueAtTime(volume, t + .05);
 }
 function unlockAudio() {
   const Ctx = window.AudioContext || window.webkitAudioContext;

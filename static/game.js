@@ -161,19 +161,26 @@ btn.onpointerup = btn.onpointerleave = btn.onpointercancel = up;
 addEventListener('keydown', e => { if (e.code === 'Space' && !e.repeat && !e.target.closest('button, select, input, textarea, a') && !document.querySelector('.modal[style*="flex"]')) { e.preventDefault(); down(); } });
 addEventListener('keyup', e => { if (e.code === 'Space') up(); });
 
-// ---- мут всех звуков ----
 (() => {
-  const b = $('bmute');
+  const slider = $('bvolume');
+  let lastVolume = volume || 1;
   const paint = () => {
-    b.setAttribute('aria-pressed', String(muted));
-    b.setAttribute('aria-label', muted ? 'Включить звук' : 'Выключить звук');
-    b.title = muted ? 'Звук выключен (M)' : 'Звук включён (M)';
+    const percent = Math.round(volume * 100);
+    slider.value = String(percent);
+    slider.style.setProperty('--volume', percent + '%');
+    slider.setAttribute('aria-valuetext', volume === 0 ? 'Звук выключен' : percent + '%');
+    $('volume-value').textContent = percent + '%';
   };
-  const toggle = () => { setMuted(!muted); paint(); };
-  b.addEventListener('click', e => { toggle(); if (e.detail) b.blur(); });
+  slider.addEventListener('input', () => {
+    setVolume(Number(slider.value) / 100);
+    if (volume > 0) lastVolume = volume;
+    paint();
+  });
   addEventListener('keydown', e => {
     if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || document.querySelector('.modal[style*="flex"]')) return;
-    if (e.code === 'KeyM' && !e.target.closest('input, textarea, select')) { e.preventDefault(); toggle(); }
+    if (e.code === 'KeyM' && !e.target.closest('input, textarea, select')) {
+      e.preventDefault(); setVolume(volume > 0 ? 0 : lastVolume); paint();
+    }
   });
   paint();
 })();
