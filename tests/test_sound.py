@@ -73,6 +73,7 @@ const context = vm.createContext({
   }
 });
 vm.runInContext(fs.readFileSync('static/sound.js', 'utf8'), context);
+vm.runInContext(fs.readFileSync('static/multiplayer.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('static/game.js', 'utf8'), context);
 const result = vm.runInContext(fs.readFileSync(0, 'utf8'), context);
 process.stdout.write(JSON.stringify(result));

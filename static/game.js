@@ -64,6 +64,7 @@ async function boot() {
   initWorld();
   initGuide();
   initLeaderboard();
+  initMultiplayer();
   if (!tutDone) setTut(0);
   requestAnimationFrame(loop);
 }
@@ -138,6 +139,7 @@ function down() {
     trophy = trophyChance > 0 && Math.random() < trophyChance;
     w = trophy ? fish.max * rnd(1.25, 1.5) : rnd(fish.min, fish.max);
     say('Рыба на крючке! Чередуйте подмотку и ослабление.'); if (tut === 2) setTut(3);
+    mpNotify();
   } else if (S === 'reel') hold = 1;
   label();
 }
@@ -147,6 +149,7 @@ function up() {
     S = 'fly'; cast = 0; lock(true); bx = R[sr.value].rng * Math.max(.08, pw) * windRangeFactor();
     castWhoosh();
     castPending = true;
+    mpNotify();
     post('/api/cast', {bait: sb.value, location: sl.value}).then(async r => {
       if (!r.ok) end(r.error || 'Не удалось забросить удочку.');
       else if (r.bait_kept) toast('Блесна не потратилась', 'Заброс обошёлся бесплатно: наживка осталась в запасе.');
@@ -418,6 +421,7 @@ function draw() {
   drawEnvironment(l,time);
   drawFirstPersonDock();
   }
+  drawNearbyAnglers(time);
   drawFog(g, time);
   const [tx, ty] = rodTip(), target=waterPoint(bx);
   let px=null, py=0, scale=1;

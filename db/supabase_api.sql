@@ -93,6 +93,22 @@ BEGIN
     SELECT b.fish_id,jsonb_agg(jsonb_build_object('username',b.username,'weight',b.weight_kg,'caught_at',b.caught_at,'you',b.user_id=u) ORDER BY b.weight_kg DESC,b.id) rows
     FROM (SELECT b0.*,uu.username,row_number() OVER (PARTITION BY b0.fish_id ORDER BY b0.weight_kg DESC,b0.id) pos FROM (SELECT c.id,c.user_id,c.fish_id,c.weight_kg,c.caught_at,row_number() OVER (PARTITION BY c.fish_id,c.user_id ORDER BY c.weight_kg DESC,c.id) rn FROM catch c) b0 JOIN "user" uu ON uu.id=b0.user_id WHERE b0.rn=1) b
     WHERE b.pos<=10 GROUP BY b.fish_id) g ON g.fish_id=f.id));
+ ELSIF action='presence' THEN
+  -- Хартбит «рыбаки рядом»: обновляем присутствие и отдаём соседей, счётчики и ленту уловов.
+  SELECT * INTO l FROM location WHERE code=d->>'location';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Неизвестная локация.' USING ERRCODE='P0001'; END IF;
+  IF l.code='sea' AND p.boat_owned=0 THEN RETURN '{"status":403,"body":{"ok":false,"error":"Для морской рыбалки необходима лодка."}}'; END IF;
+  INSERT INTO presence VALUES(u,l.id,CASE WHEN d->>'status' IN ('idle','wait','fight') THEN d->>'status' ELSE 'idle' END,now_value)
+   ON CONFLICT(user_id) DO UPDATE SET location_id=excluded.location_id,status=excluded.status,seen_at=excluded.seen_at;
+  DELETE FROM presence WHERE seen_at<now_value-60;
+  RETURN jsonb_build_object('status',200,'body',jsonb_build_object('ok',true,
+   'players',coalesce((SELECT jsonb_agg(jsonb_build_object('username',x.username,'status',pr.status) ORDER BY x.username)
+    FROM presence pr JOIN "user" x ON x.id=pr.user_id WHERE pr.location_id=l.id AND pr.user_id<>u AND pr.seen_at>=now_value-15),'[]'),
+   'online',(SELECT count(*) FROM presence WHERE seen_at>=now_value-15),
+   'counts',coalesce((SELECT jsonb_object_agg(lo.code,cnt.n) FROM (SELECT location_id,count(*) n FROM presence WHERE seen_at>=now_value-15 GROUP BY location_id) cnt JOIN location lo ON lo.id=cnt.location_id),'{}'),
+   'feed',coalesce((SELECT jsonb_agg(jsonb_build_object('id',c.id,'username',x.username,'fish',f.name,'location',lo.name,'location_code',lo.code,'weight',c.weight_kg,'trophy',c.trophy=1,'kept',c.kept=1,'caught_at',c.caught_at) ORDER BY c.id DESC)
+    FROM (SELECT * FROM catch WHERE user_id<>u AND caught_at>=to_char((now() AT TIME ZONE 'UTC')-interval '600 seconds','YYYY-MM-DD HH24:MI:SS') ORDER BY id DESC LIMIT 12) c
+    JOIN "user" x ON x.id=c.user_id JOIN fish f ON f.id=c.fish_id JOIN location lo ON lo.id=c.location_id),'[]')));
  ELSIF action='cast' THEN
   SELECT * INTO l FROM location WHERE code=d->>'location';
   IF NOT FOUND THEN RAISE EXCEPTION 'Неизвестная локация.' USING ERRCODE='P0001'; END IF;

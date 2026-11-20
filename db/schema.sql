@@ -74,3 +74,8 @@ CREATE TABLE achievement(                        -- открытые дости�
 CREATE TABLE active_cast(                        -- текущий заброс игрока
   user_id INTEGER PRIMARY KEY REFERENCES user(id) ON DELETE CASCADE,
   location_id INTEGER NOT NULL, bait_id INTEGER NOT NULL, ready_at REAL NOT NULL);
+CREATE TABLE presence(                           -- кто сейчас на рыбалке: хартбит клиента
+  user_id INTEGER PRIMARY KEY REFERENCES user(id) ON DELETE CASCADE,
+  location_id INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'idle',           -- idle/wait/fight
+  seen_at REAL NOT NULL);                        -- серверное время последнего хартбита

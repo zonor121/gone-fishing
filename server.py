@@ -5,6 +5,7 @@ from contextlib import closing
 from sea import (migrate as migrate_sea, BOAT_PRICE, BELLS_PRICE, MIN_CATCH_SECONDS, ROD_PRICES,
                  TACKLE_PRICES, TACKLE_ZONES, REEL_PRICES, REEL_RECOVERY)
 import auth
+import multiplayer
 import world
 from world import SPIN_BAIT_SPEND_CHANCE, TROPHY_CHANCE, TROPHY_MAX_MULT, TROPHY_PRICE_MULT
 import supabase_db
@@ -47,6 +48,7 @@ def init_db():
         world.migrate(c)
         migrate_sea(c)
         auth.migrate(c)
+        multiplayer.migrate(c)
 
 # ---------- чтение ----------
 def get_config():
@@ -299,6 +301,20 @@ def post_tutorial(d, uid):
         c.commit()
     return 200, {'ok': True}
 
+def post_presence(d, uid):                 # хартбит: кто рядом + лента уловов в ответ
+    with closing(conn()) as c:
+        c.execute('BEGIN IMMEDIATE')
+        loc = c.execute('SELECT id,code FROM location WHERE code=?', (d.get('location'),)).fetchone()
+        if not loc:
+            return 400, {'ok': False, 'error': 'Неизвестная локация.'}
+        owned = c.execute('SELECT boat_owned FROM player WHERE user_id=?', (uid,)).fetchone()[0]
+        if loc['code'] == 'sea' and not owned:
+            return 403, {'ok': False, 'error': 'Для морской рыбалки необходима лодка.'}
+        multiplayer.touch(c, uid, loc['id'], d.get('status'))
+        result = multiplayer.snapshot(c, uid, loc['id'])
+        c.commit()
+    return 200, result
+
 # ---------- аккаунты: регистрация, вход, выход ----------
 def post_register(d, headers=None):
     with closing(conn()) as c:
@@ -383,12 +399,14 @@ post_buy = remote_game('buy', post_buy)
 post_catch = remote_game('catch', post_catch)
 post_quest_claim = remote_game('quest_claim', post_quest_claim)
 post_tutorial = remote_game('tutorial', post_tutorial)
+post_presence = remote_game('presence', post_presence)
 post_register = remote_auth(supabase_db.register, post_register)
 post_login = remote_auth(supabase_db.login, post_login)
 post_logout = remote_auth(supabase_db.logout, post_logout)
 
 POST = {'/api/cast': post_cast, '/api/buy': post_buy, '/api/catch': post_catch,
-        '/api/quest/claim': post_quest_claim, '/api/tutorial': post_tutorial}
+        '/api/quest/claim': post_quest_claim, '/api/tutorial': post_tutorial,
+        '/api/presence': post_presence}
 AUTH_POST = {'/api/register': post_register, '/api/login': post_login, '/api/logout': post_logout}
 
 class Handler(SimpleHTTPRequestHandler):

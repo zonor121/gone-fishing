@@ -33,6 +33,7 @@ const context = vm.createContext({document, volume: 1, currentWeather: () => 'cl
   }
 });
 vm.runInContext(fs.readFileSync('static/fish-art.js', 'utf8'), context);
+vm.runInContext(fs.readFileSync('static/multiplayer.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('static/game.js', 'utf8'), context);
 vm.runInContext(`
   function setup({weight = 1, max = 8, resistance = .75, style = 'heavy',
