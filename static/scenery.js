@@ -466,6 +466,16 @@ function drawDockWet() {
   g.restore();
 }
 
+// Облик шести ступеней удочек: бланк, обмотки колец, металл катушки, рукоять.
+const ROD_LOOKS = {
+  1: {blank: '#ab8750', wrap: '#7a4a28', metal: '#8f9a8a', grip: 'cork', nodes: true},
+  2: {blank: '#6f7d52', wrap: '#3f5230', metal: '#9aa79a', grip: 'cork'},
+  3: {blank: '#526b62', wrap: '#8a2f26', metal: '#a8b2a6', grip: 'cork'},
+  4: {blank: '#4a5a6e', wrap: '#28374d', metal: '#b4bcb2', grip: 'cork'},
+  5: {blank: '#384849', wrap: '#b3852e', metal: '#c1c8bd', grip: 'eva'},
+  6: {blank: '#23282e', wrap: '#c0533f', metal: '#cdd4c9', grip: 'eva', weave: true}
+};
+
 // Только руки и снасть: положение камеры совпадает со взглядом рыбака.
 function drawFirstPersonRod(tx, ty, time) {
   const lift = S==='charge' ? pw*30 : S==='fly' ? Math.sin(Math.min(1,cast)*Math.PI)*18 : 0;
@@ -473,27 +483,38 @@ function drawFirstPersonRod(tx, ty, time) {
   g.save();g.lineCap='round';
   const P=getPalette(), dim=P.foregroundDim;
   const D=c=>mix(c,'#141c26',dim);
+  const look=ROD_LOOKS[+sr.value]||ROD_LOOKS[1];
   const sleeve=g.createLinearGradient(580,330,710,430);
   sleeve.addColorStop(0,D('#718064'));sleeve.addColorStop(.5,D('#495d46'));sleeve.addColorStop(1,D('#283f35'));
   shape(g,[[800,420],[673,420],[572,376-lift],[590,344-lift],[695,376]],sleeve);
   g.strokeStyle=D('#8a9477');g.lineWidth=1.3;g.beginPath();g.moveTo(612,368-lift);g.lineTo(710,410);g.stroke();
+  g.strokeStyle=rgba(D('#2c3f33'),.5);g.lineWidth=1;
+  g.beginPath();g.moveTo(640,388-lift*.6);g.quadraticCurveTo(668,392-lift*.4,690,404);g.stroke();
+  g.beginPath();g.moveTo(660,380-lift*.5);g.quadraticCurveTo(686,386-lift*.3,704,398);g.stroke();
   g.save();g.translate(hx,hy);g.rotate(-.55);
   const skin=g.createLinearGradient(-12,-20,15,18);skin.addColorStop(0,D('#e1b58a'));skin.addColorStop(.6,D('#bd8e68'));skin.addColorStop(1,D('#805940'));
   g.fillStyle=skin;g.beginPath();g.roundRect(-17,-23,34,49,12);g.fill();g.restore();
-  // Комель и пробковая рукоять с катушкодержателем.
+  // Комель и рукоять: пробка у младших удочек, тёмная EVA у старших.
   g.strokeStyle=D('#252f2b');g.lineWidth=10;g.beginPath();g.moveTo(624,420);g.lineTo(610,400-lift*.4);g.stroke();
   const gx0=622, gy0=414-lift*.4, gx1=566, gy1=336-lift;
-  const cork=g.createLinearGradient(gx0,gy0,gx1,gy1);
-  cork.addColorStop(0,D('#a9885c'));cork.addColorStop(.5,D('#c9a875'));cork.addColorStop(1,D('#b3925f'));
-  g.strokeStyle=cork;g.lineWidth=9;g.beginPath();g.moveTo(gx0,gy0);g.lineTo(gx1,gy1);g.stroke();
-  g.strokeStyle=D('#d8bc8c');g.lineWidth=3;g.beginPath();g.moveTo((gx0+gx1)/2,(gy0+gy1)/2);g.lineTo(gx1,gy1);g.stroke();
+  const grip=g.createLinearGradient(gx0,gy0,gx1,gy1);
+  if(look.grip==='cork'){
+    grip.addColorStop(0,D('#a9885c'));grip.addColorStop(.5,D('#c9a875'));grip.addColorStop(1,D('#b3925f'));
+  } else {
+    grip.addColorStop(0,D('#33383c'));grip.addColorStop(.5,D('#22262a'));grip.addColorStop(1,D('#2c3134'));
+  }
+  g.strokeStyle=grip;g.lineWidth=9;g.beginPath();g.moveTo(gx0,gy0);g.lineTo(gx1,gy1);g.stroke();
+  g.strokeStyle=look.grip==='cork'?D('#d8bc8c'):rgba(D('#5a6166'),.55);g.lineWidth=look.grip==='cork'?3:2;
+  g.beginPath();g.moveTo((gx0+gx1)/2,(gy0+gy1)/2);g.lineTo(gx1,gy1);g.stroke();
   const gdx=gx1-gx0, gdy=gy1-gy0, gl=Math.hypot(gdx,gdy)||1, gpx=-gdy/gl, gpy=gdx/gl;
-  g.strokeStyle='rgba(70,52,30,.35)';g.lineWidth=.7;
-  for(let i=1;i<8;i++){const u=i/8, x=gx0+gdx*u, y=gy0+gdy*u;
+  g.strokeStyle=look.grip==='cork'?'rgba(70,52,30,.35)':'rgba(10,12,14,.45)';g.lineWidth=.7;
+  for(let i=1;i<(look.grip==='cork'?8:11);i++){const u=i/(look.grip==='cork'?8:11), x=gx0+gdx*u, y=gy0+gdy*u;
     g.beginPath();g.moveTo(x-gpx*4.2,y-gpy*4.2);g.lineTo(x+gpx*4.2,y+gpy*4.2);g.stroke();}
-  g.fillStyle='rgba(88,66,40,.3)';
-  for(let i=0;i<14;i++){const u=noise(i+7), x=gx0+gdx*u+(noise(i+31)-.5)*6, y=gy0+gdy*u+(noise(i+53)-.5)*6;
-    g.beginPath();g.ellipse(x,y,.9,.5,.6,0,7);g.fill();}
+  if(look.grip==='cork'){
+    g.fillStyle='rgba(88,66,40,.3)';
+    for(let i=0;i<14;i++){const u=noise(i+7), x=gx0+gdx*u+(noise(i+31)-.5)*6, y=gy0+gdy*u+(noise(i+53)-.5)*6;
+      g.beginPath();g.ellipse(x,y,.9,.5,.6,0,7);g.fill();}
+  }
   for(const u of [.42,.66]){const x=gx0+gdx*u, y=gy0+gdy*u;
     g.strokeStyle=D('#5b6a60');g.lineWidth=10;g.beginPath();g.moveTo(x-gdx/gl*3,y-gdy/gl*3);g.lineTo(x+gdx/gl*3,y+gdy/gl*3);g.stroke();
     g.strokeStyle=D('#93a08f');g.lineWidth=1;g.beginPath();g.moveTo(x-gdx/gl*3-gpx*4,y-gdy/gl*3-gpy*4);g.lineTo(x+gdx/gl*3-gpx*4,y+gdy/gl*3-gpy*4);g.stroke();}
@@ -511,52 +532,118 @@ function drawFirstPersonRod(tx, ty, time) {
   for(let i=0;i<=N;i++){const u=i/N, [x,y]=at(u), [ax,ay]=tan(u), l=Math.hypot(ax,ay)||1;
     const px=-ay/l, py=ax/l, w=width(u)/2;
     left.push([x+px*w,y+py*w]);right.push([x-px*w,y-py*w]);}
-  const rodBase=['#ab8750','#526b62','#384849'][+sr.value] || '#ab8750';
   const blank=g.createLinearGradient(bx0,by0,tx,ty);
-  blank.addColorStop(0,D(mix(rodBase,'#f0e6c8',.22)));blank.addColorStop(.55,D(rodBase));blank.addColorStop(1,D(mix(rodBase,'#101816',.3)));
+  blank.addColorStop(0,D(mix(look.blank,'#f0e6c8',.22)));blank.addColorStop(.55,D(look.blank));blank.addColorStop(1,D(mix(look.blank,'#101816',.3)));
   g.fillStyle=blank;g.beginPath();g.moveTo(left[0][0],left[0][1]);
   for(const p of left)g.lineTo(p[0],p[1]);
   for(let i=N;i>=0;i--)g.lineTo(right[i][0],right[i][1]);
   g.closePath();g.fill();
+  // Плетение карбона: косые штрихи поперёк бланка в обе стороны.
+  if(look.weave){
+    for(let i=0;i<12;i++){
+      const u=i/12, v=u+1/12;
+      const [x1,y1]=at(u), [a1,b1]=tan(u), l1=Math.hypot(a1,b1)||1, w1=width(u)*.5;
+      const [x2,y2]=at(v), [a2,b2]=tan(v), l2=Math.hypot(a2,b2)||1, w2=width(v)*.5;
+      g.strokeStyle='rgba(235,240,245,.06)';g.lineWidth=.8;
+      g.beginPath();g.moveTo(x1-b1/l1*w1,y1+a1/l1*w1);g.lineTo(x2+b2/l2*w2,y2-a2/l2*w2);g.stroke();
+      g.strokeStyle='rgba(0,0,0,.12)';
+      g.beginPath();g.moveTo(x1+b1/l1*w1,y1-a1/l1*w1);g.lineTo(x2-b2/l2*w2,y2+a2/l2*w2);g.stroke();
+    }
+  }
+  // Узлы бамбука: чуть более тёмные пояски с бликом под ними.
+  if(look.nodes){
+    for(const u of [.2,.44,.6,.8]){
+      const [x,y]=at(u), [ax,ay]=tan(u), l=Math.hypot(ax,ay)||1;
+      const px=-ay/l, py=ax/l, w=width(u)*.55;
+      g.strokeStyle=D(mix(look.blank,'#6b4f28',.5));g.lineWidth=1.6;
+      g.beginPath();g.moveTo(x-px*w,y-py*w);g.lineTo(x+px*w,y+py*w);g.stroke();
+      g.strokeStyle='rgba(240,230,200,.3)';g.lineWidth=.6;
+      g.beginPath();g.moveTo(x-px*w+ax/l*1.4,y-py*w+ay/l*1.4);g.lineTo(x+px*w+ax/l*1.4,y+py*w+ay/l*1.4);g.stroke();
+    }
+  }
   g.strokeStyle='rgba(240,236,214,.3)';g.lineWidth=.6;g.beginPath();
   for(let i=0;i<=N;i++){const p=left[i];i?g.lineTo(p[0],p[1]):g.moveTo(p[0],p[1]);}g.stroke();
+  // Блик вдоль бланка чуть внутрь от светлой кромки.
+  g.strokeStyle='rgba(255,251,232,.14)';g.lineWidth=1.1;g.beginPath();
+  for(let i=1;i<N;i++){const u=i/N, [x,y]=at(u), [ax,ay]=tan(u), l=Math.hypot(ax,ay)||1;
+    const px=-ay/l, py=ax/l, w=width(u)*.28;
+    i>1?g.lineTo(x+px*w,y+py*w):g.moveTo(x+px*w,y+py*w);}g.stroke();
   // Феррулы — стыки колен бланка.
   for(const u of [.38,.68]){const [x,y]=at(u), [ax,ay]=tan(u), l=Math.hypot(ax,ay)||1;
     const px=-ay/l, py=ax/l, w=width(u)*.6;
     g.strokeStyle=D('#1d2622');g.lineWidth=2.2;g.beginPath();g.moveTo(x-px*w,y-py*w);g.lineTo(x+px*w,y+py*w);g.stroke();
     g.strokeStyle='rgba(226,220,196,.4)';g.lineWidth=.6;g.beginPath();g.moveTo(x-px*w+ax/l,y-py*w+ay/l);g.lineTo(x+px*w+ax/l,y+py*w+ay/l);g.stroke();}
-  // Кольца: ножка с обмотками и ободок по касательной, леска идёт под ними.
+  // Кольца: ножка с цветной обмоткой и ободок по касательной; центры запоминаем для лески.
+  const guides=[];
   for(const u of [.3,.5,.7,.88,1]){const [x,y]=at(u), [ax,ay]=tan(u), l=Math.hypot(ax,ay)||1, a=Math.atan2(ay,ax);
     let px=-ay/l, py=ax/l; if(py<0){px=-px;py=-py;}
     const w=width(u), r=3.4-1.8*u;
     g.strokeStyle=D('#2a2320');g.lineWidth=1.4;
     for(const o of [-1.6,1.6]){g.beginPath();g.moveTo(x+ax/l*o-px*w*.5,y+ay/l*o-py*w*.5);g.lineTo(x+ax/l*o+px*w*.5,y+ay/l*o+py*w*.5);g.stroke();}
+    for(const o of [-3.4,3.4]){
+      g.strokeStyle=D(look.wrap);g.lineWidth=2.4;
+      g.beginPath();g.moveTo(x+ax/l*(o-1.3)-px*w*.5,y+ay/l*(o-1.3)-py*w*.5);g.lineTo(x+ax/l*(o+1.3)+px*w*.5,y+ay/l*(o+1.3)+py*w*.5);g.stroke();
+      g.strokeStyle='rgba(240,234,210,.35)';g.lineWidth=.5;
+      g.beginPath();g.moveTo(x+ax/l*(o-1.3)-px*w*.3,y+ay/l*(o-1.3)-py*w*.3);g.lineTo(x+ax/l*(o+1.3)+px*w*.3,y+ay/l*(o+1.3)+py*w*.3);g.stroke();}
     const gx=x+px*(w*.5+r*.75), gy=y+py*(w*.5+r*.75);
-    g.strokeStyle=D('#cfd6c6');g.lineWidth=1;g.beginPath();g.ellipse(gx,gy,r*.5,r,a,0,7);g.stroke();
+    guides.push([gx,gy]);
+    g.strokeStyle=D(look.metal);g.lineWidth=1;g.beginPath();g.ellipse(gx,gy,r*.5,r,a,0,7);g.stroke();
     g.strokeStyle=D('#6e7a6c');g.lineWidth=.5;g.beginPath();g.ellipse(gx,gy,r*.28,r*.6,a,0,7);g.stroke();}
   // Безынерционная катушка: ножка, корпус, ротор, шпуля с леской, дужка и драг.
   g.strokeStyle=D('#4a5a52');g.lineWidth=3;g.beginPath();g.moveTo(566,345-lift);g.lineTo(572,372-lift);g.stroke();
   const metal=g.createLinearGradient(554,368-lift,587,400-lift);
-  metal.addColorStop(0,D('#c1c8bd'));metal.addColorStop(.25,D('#5c716b'));metal.addColorStop(.6,D('#273d38'));metal.addColorStop(.85,D('#8b9a8c'));metal.addColorStop(1,D('#263831'));
+  metal.addColorStop(0,D(mix(look.metal,'#ffffff',.25)));metal.addColorStop(.25,D(mix(look.metal,'#273d38',.55)));
+  metal.addColorStop(.6,D(mix(look.metal,'#101a16',.75)));metal.addColorStop(.85,D(look.metal));metal.addColorStop(1,D(mix(look.metal,'#101a16',.7)));
   g.fillStyle=metal;g.beginPath();g.ellipse(572,385-lift,13,16,-.4,0,7);g.fill();
-  g.strokeStyle=D('#8b9a8c');g.lineWidth=1.5;g.beginPath();g.ellipse(575,378-lift,9,11,-.4,0,7);g.stroke();
+  g.strokeStyle=D(mix(look.metal,'#202b26',.3));g.lineWidth=1.5;g.beginPath();g.ellipse(575,378-lift,9,11,-.4,0,7);g.stroke();
   g.fillStyle=D('#3a4a44');g.beginPath();g.ellipse(577,374-lift,7,8,-.4,0,7);g.fill();
   g.strokeStyle=D('#d8d2b0');g.lineWidth=.5;
   for(let i=0;i<5;i++){g.beginPath();g.ellipse(577,371-lift+i*1.4,6,3,-.4,0,7);g.stroke();}
   g.strokeStyle=D('#d5dbca');g.lineWidth=1;g.beginPath();g.ellipse(577,374-lift,10,11,-.4,-.6,2.6);g.stroke();
+  // Ролик лесоукладывателя на дужке.
+  g.fillStyle=D(mix(look.metal,'#ffffff',.4));g.beginPath();g.ellipse(585,381-lift,2.2,3,-.4,0,7);g.fill();
+  g.strokeStyle=D('#202b26');g.lineWidth=.6;g.beginPath();g.ellipse(585,381-lift,2.2,3,-.4,0,7);g.stroke();
+  // Рифлёный драг поверх шпули.
   g.fillStyle=D('#202b26');g.beginPath();g.ellipse(580,369-lift,3,2.4,-.4,0,7);g.fill();
   g.strokeStyle='rgba(226,232,214,.5)';g.lineWidth=.5;g.beginPath();g.ellipse(580,369-lift,3,2.4,-.4,3.4,5.6);g.stroke();
+  for(let i=0;i<5;i++){const a=-.4+i*1.26;
+    g.beginPath();g.moveTo(580+Math.cos(a)*1.6,369-lift+Math.sin(a)*1.3);g.lineTo(580+Math.cos(a)*2.9,369-lift+Math.sin(a)*2.3);g.stroke();}
   const crank=S==='reel'&&hold ? time*13 : 1;
   const kx=550+Math.cos(crank)*10, ky=389-lift+Math.sin(crank)*9;
-  g.strokeStyle=D('#a3ab95');g.lineWidth=3;g.beginPath();g.moveTo(571,389-lift);g.lineTo(kx,ky);g.stroke();
-  g.fillStyle=D('#252e29');g.beginPath();g.ellipse(kx,ky,5,3,-.5,0,7);g.fill();
+  g.strokeStyle=D(mix(look.metal,'#202b26',.35));g.lineWidth=3;g.beginPath();g.moveTo(571,389-lift);g.lineTo(kx,ky);g.stroke();
+  g.fillStyle=D('#252e29');g.beginPath();g.ellipse(kx,ky,5.2,3.2,-.5,0,7);g.fill();
   g.fillStyle='rgba(226,232,214,.35)';g.beginPath();g.ellipse(kx-1,ky-1,1.6,.9,-.5,0,7);g.fill();
-  // Пальцы обхватывают рукоять, не перекрывая вершинку.
-  g.strokeStyle=D('#d5a67d');g.lineWidth=6;
-  for(let i=0;i<3;i++){g.beginPath();g.moveTo(578+i*4,360-lift+i*6);g.quadraticCurveTo(594+i*3,360-lift+i*6,592+i*3,367-lift+i*6);g.stroke();}
+  g.fillStyle=rgba(D(mix(look.metal,'#ffffff',.3)),.8);g.beginPath();g.ellipse(kx,ky,1,.7,-.5,0,7);g.fill();
+  // Леска сходит со шпули и проходит через каждое кольцо до вершинки.
+  g.strokeStyle=rgba(D('#f6f4da'),.5);g.lineWidth=.7;
+  g.beginPath();g.moveTo(579,372-lift);
+  let prev=[579,372-lift];
+  for(const [qx,qy] of guides){g.quadraticCurveTo((prev[0]+qx)/2,(prev[1]+qy)/2+1.6,qx,qy);prev=[qx,qy];}
+  g.lineTo(tx,ty);g.stroke();
+  // Кисть обхватывает рукоять: четыре пальца с фалангами и ногтями, большой сверху.
+  const skinCol=D('#d5a67d'), nailCol=rgba(D('#ecd2b4'),.9);
+  for(let i=0;i<4;i++){
+    const u=.34+i*.12, cx=gx0+gdx*u, cy=gy0+gdy*u;
+    const bx=cx+gpx*8, by=cy+gpy*8, ex=cx-gpx*5.5, ey=cy-gpy*5.5;
+    g.strokeStyle=skinCol;g.lineWidth=5.2-i*.3;
+    g.beginPath();g.moveTo(bx,by);g.quadraticCurveTo(cx+gpx*2+gdx/gl*2.5,cy+gpy*2+gdy/gl*2.5,ex,ey);g.stroke();
+    g.strokeStyle=rgba(D('#a97e58'),.5);g.lineWidth=.8;
+    g.beginPath();g.moveTo(cx+gpx*3-gdx/gl*1.6,cy+gpy*3-gdy/gl*1.6);g.lineTo(cx+gpx*3+gdx/gl*1.6,cy+gpy*3+gdy/gl*1.6);g.stroke();
+    g.fillStyle=nailCol;g.beginPath();g.ellipse(ex,ey,1.6,1.1,Math.atan2(gdy,gdx),0,7);g.fill();
+  }
+  const tu=.62, tcx=gx0+gdx*tu, tcy=gy0+gdy*tu;
+  g.strokeStyle=skinCol;g.lineWidth=6;
+  g.beginPath();g.moveTo(hx+6,hy+10);g.quadraticCurveTo(tcx+gpx*9,tcy+gpy*9,tcx+gpx*2+gdx/gl*6,tcy+gpy*2+gdy/gl*6);g.stroke();
+  g.fillStyle=nailCol;g.beginPath();g.ellipse(tcx+gpx*2+gdx/gl*6,tcy+gpy*2+gdy/gl*6,1.9,1.3,Math.atan2(gdy,gdx),0,7);g.fill();
   if(S==='reel'){
     shape(g,[[331,420],[421,420],[548,394-lift],[544,374-lift],[499,380-lift]],sleeve);
-    g.fillStyle=D('#c69b75');g.beginPath();g.ellipse(kx-7,ky+2,17,10,-.3,0,7);g.fill();
+    g.fillStyle=D('#c69b75');g.beginPath();g.ellipse(kx-8,ky+3,15,9,-.3,0,7);g.fill();
+    for(let i=0;i<3;i++){
+      g.strokeStyle=skinCol;g.lineWidth=4.6-i*.4;
+      g.beginPath();g.moveTo(kx-14+i*2,ky-4+i*3.4);g.quadraticCurveTo(kx+2,ky-6+i*3.6,kx+5-i,ky-1+i*3.2);g.stroke();
+      g.fillStyle=nailCol;g.beginPath();g.ellipse(kx+5-i,ky-1+i*3.2,1.4,1,-.3,0,7);g.fill();}
+    g.strokeStyle=skinCol;g.lineWidth=5;
+    g.beginPath();g.moveTo(kx-12,ky+7);g.quadraticCurveTo(kx-2,ky+9,kx+4,ky+5);g.stroke();
   }
   g.restore();
 }
