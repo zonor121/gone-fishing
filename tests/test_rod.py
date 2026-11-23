@@ -76,29 +76,38 @@ vm.runInContext(`
     WORLD = {day_part: part, day_part_left: 180 - seconds, weather: wx, weather_left: 120};
     worldSyncAt = 1000000; setClock(1000000);
   }
-  function rod(level, state = 'idle') {
+  function rod(level, state = 'idle', time = 0) {
     sr.value = String(level); S = state;
     pw = state === 'charge' ? .5 : 0; cast = state === 'fly' ? .3 : 0;
     t = state === 'reel' ? .5 : 0; sd = 0; hold = state === 'reel' ? 1 : 0;
-    resetDrawing(); drawFirstPersonRod(400, 200, 0);
+    resetDrawing(); drawFirstPersonRod(400, 200, time);
   }
   function midStop(gradient) {
     return gradient.stops.reduce((a, b) => Math.abs(b[0] - .5) < Math.abs(a[0] - .5) ? b : a)[1];
   }
-  function blankGradient(lift = 0) {
-    return drawing.gradients.find(gr => gr.args[0] === 563 && gr.args[1] === 333 - lift);
+  function blankGradient() {
+    return drawing.gradients.find(gr =>
+      Math.abs(gr.args[0] - ROD_RIG.blankBase[0]) < .01 &&
+      Math.abs(gr.args[1] - ROD_RIG.blankBase[1]) < .01 &&
+      Math.abs(gr.args[2] - ROD_RIG.tip[0]) < .01 &&
+      Math.abs(gr.args[3] - ROD_RIG.tip[1]) < .01);
   }
-  function gripGradient() { return drawing.gradients.find(gr => gr.args[0] === 622); }
+  function gripGradient() {
+    return drawing.gradients.find(gr =>
+      Math.abs(gr.args[0] - ROD_RIG.gripStart[0]) < .01 &&
+      Math.abs(gr.args[1] - ROD_RIG.gripStart[1]) < .01);
+  }
   function endpoints(path) {
     return path.points.filter(p => p[0] === 'M' || p[0] === 'L' || p[0] === 'Q')
       .map(p => [p[p.length - 2], p[p.length - 1]]);
   }
-  function linePath(lift = 0) {
+  function linePath() {
     return drawing.strokes.find(s => {
       const pts = endpoints(s);
       if (pts.length < 6) return false;
       const [fx, fy] = pts[0], [lx, ly] = pts[pts.length - 1];
-      return Math.hypot(fx - 575, fy - (378 - lift)) < 18 && Math.hypot(lx - 400, ly - 200) < .01;
+      return Math.hypot(fx - ROD_RIG.spool[0], fy - ROD_RIG.spool[1]) < 3 &&
+        Math.hypot(lx - ROD_RIG.tip[0], ly - ROD_RIG.tip[1]) < 3;
     });
   }
 `, context);
@@ -123,23 +132,22 @@ class RodTests(unittest.TestCase):
         self.assertEqual(len(set(result)), 6, result)
 
     def test_line_runs_from_spool_through_guides_to_tip_in_every_state(self):
-        for state, lift in (('idle', 0), ('wait', 0), ('reel', 0), ('charge', 15), ('fly', 14.5623)):
+        for state in ('idle', 'wait', 'reel', 'charge', 'fly'):
             with self.subTest(state=state):
                 result = self.probe(f"""(() => {{
                   at('day', 30); rod(1, '{state}');
-                  const line = linePath({lift});
+                  const line = linePath();
                   if (!line) return {{found: false}};
                   const pts = endpoints(line);
-                  const centers = new Set();
-                  for (const e of drawing.ellipses) {{
-                    if (Math.hypot(e.x - 575, e.y - (378 - {lift})) < 18) continue;
-                    if (pts.some(p => Math.hypot(p[0] - e.x, p[1] - e.y) < 2.5))
-                      centers.add(e.x.toFixed(1) + ',' + e.y.toFixed(1));
-                  }}
-                  return {{found: true, guides: centers.size}};
+                  const matched = ROD_RIG.guides.filter(([gx, gy]) =>
+                    pts.some(p => Math.hypot(p[0] - gx, p[1] - gy) <= 2.5) &&
+                    drawing.ellipses.some(e => Math.hypot(e.x - gx, e.y - gy) <= 2.5)
+                  );
+                  return {{found: true, totalGuides: ROD_RIG.guides.length, matched: matched.length}};
                 }})()""")
                 self.assertTrue(result['found'], f'нет лески от шпули к вершинке в состоянии {state}')
-                self.assertEqual(result['guides'], 5)
+                self.assertEqual(result['totalGuides'], 5)
+                self.assertEqual(result['matched'], 5)
 
     def test_night_dims_blank_exactly_by_foreground_dim(self):
         result = self.probe("""(() => {
@@ -167,11 +175,80 @@ class RodTests(unittest.TestCase):
           at('day', 30); rod(1);
           return drawing.pathFills.some(f => {
             const pts = f.points.filter(p => p[0] === 'M' || p[0] === 'L');
-            return pts.some(p => Math.hypot(p[1] - 563, p[2] - 333) < 3)
+            return pts.some(p => Math.hypot(p[1] - ROD_RIG.blankBase[0], p[2] - ROD_RIG.blankBase[1]) < 3)
               && pts.some(p => Math.hypot(p[1] - 400, p[2] - 200) < 1);
           });
         })()""")
         self.assertTrue(result)
+
+    def test_rod_is_large_and_tapered(self):
+        result = self.probe("""(() => {
+          at('day', 30); rod(1);
+          const length = Math.hypot(ROD_RIG.blankBase[0] - 400, ROD_RIG.blankBase[1] - 200);
+          return {length, baseY: ROD_RIG.blankBase[1], widths: ROD_RIG.widths};
+        })()""")
+        self.assertGreaterEqual(result['length'], 230)
+        self.assertGreater(result['baseY'], 300)
+        self.assertGreaterEqual(result['widths'][0], 8)
+        self.assertLessEqual(result['widths'][1], 2)
+
+    def test_blank_bends_with_state(self):
+        result = self.probe("""(() => {
+          at('day', 30);
+          rod(1, 'idle'); const idleBow = ROD_RIG.bow;
+          sr.value = '1'; S = 'reel'; t = .8; sd = 0; hold = 1; resetDrawing(); drawFirstPersonRod(400, 200, 0);
+          const reelBow = ROD_RIG.bow;
+          rod(1, 'charge'); const chargeBow = ROD_RIG.bow;
+          S = 'fly'; cast = .3; resetDrawing(); drawFirstPersonRod(400, 200, 0); const flyA = ROD_RIG.bow;
+          cast = .6; resetDrawing(); drawFirstPersonRod(400, 200, 0); const flyB = ROD_RIG.bow;
+          return {idleBow, reelBow, chargeBow, flyA, flyB};
+        })()""")
+        self.assertGreater(result['idleBow'], 0)
+        self.assertGreater(result['reelBow'], result['idleBow'])
+        self.assertLess(result['chargeBow'], 0)
+        self.assertNotAlmostEqual(result['flyA'], result['flyB'])
+
+    def test_bite_makes_tip_tremble(self):
+        result = self.probe("""(() => {
+          at('day', 30);
+          rod(1, 'bite', 0.01); const bowA = ROD_RIG.bow;
+          rod(1, 'bite', 0.05); const bowB = ROD_RIG.bow;
+          return {bowA, bowB};
+        })()""")
+        self.assertNotAlmostEqual(result['bowA'], result['bowB'])
+
+    def test_breathing_moves_rig_but_not_tip(self):
+        result = self.probe("""(() => {
+          at('day', 30);
+          rod(1, 'idle', 0);
+          const base0 = ROD_RIG.blankBase.slice();
+          const tip0 = endpoints(linePath()).at(-1);
+          rod(1, 'idle', 2.5);
+          const base1 = ROD_RIG.blankBase.slice();
+          const tip1 = endpoints(linePath()).at(-1);
+          return {base0, base1, tip0, tip1};
+        })()""")
+        self.assertNotEqual(result['base0'], result['base1'])
+        self.assertEqual(result['tip0'], [400, 200])
+        self.assertEqual(result['tip1'], [400, 200])
+
+    def test_left_hand_only_while_fishing(self):
+        result = self.probe("""(() => {
+          at('day', 30);
+          const states = {};
+          for (const st of ['idle', 'charge', 'fly', 'wait', 'bite', 'reel']) {
+            rod(1, st, 0);
+            states[st] = ROD_RIG.leftHand;
+          }
+          rod(1, 'reel', 0); const crank0 = ROD_RIG.crank.slice();
+          rod(1, 'reel', 0.1); const crank1 = ROD_RIG.crank.slice();
+          return {states, crank0, crank1};
+        })()""")
+        for st in ('wait', 'bite', 'reel'):
+            self.assertTrue(result['states'][st], st)
+        for st in ('idle', 'charge', 'fly'):
+            self.assertFalse(result['states'][st], st)
+        self.assertNotEqual(result['crank0'], result['crank1'])
 
 
 if __name__ == '__main__':
