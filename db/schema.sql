@@ -40,7 +40,8 @@ CREATE TABLE player(                             -- деньги и флаги: 
   bells_owned INTEGER NOT NULL DEFAULT 0,
   rod_level INTEGER NOT NULL DEFAULT 1,
   tackle_level INTEGER NOT NULL DEFAULT 1,
-  reel_level INTEGER NOT NULL DEFAULT 1);
+  reel_level INTEGER NOT NULL DEFAULT 1,
+  groundbait_qty INTEGER NOT NULL DEFAULT 0 CHECK(groundbait_qty>=0));
 CREATE TABLE player_bait(                        -- запас наживки на аккаунт
   user_id INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE,
   bait_id INTEGER NOT NULL REFERENCES bait(id),

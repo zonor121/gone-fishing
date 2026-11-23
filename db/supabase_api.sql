@@ -43,7 +43,7 @@ BEGIN
      'times',string_to_array(times,','),'weather',string_to_array(weather,','),
      'locs',(SELECT jsonb_agg(l.code ORDER BY l.id) FROM fish_location fl JOIN location l ON l.id=fl.location_id WHERE fl.fish_id=x.id),
      'baits',(SELECT jsonb_object_agg(b.code,fb.bite_weight) FROM fish_bait fb JOIN bait b ON b.id=fb.bait_id WHERE fb.fish_id=x.id)) ORDER BY x.price) FROM fish x),
-   'boat_price',10000,'bells_price',200,'min_catch_seconds',12,
+   'boat_price',10000,'bells_price',200,'groundbait_price',120,'groundbait_duration',180,'min_catch_seconds',12,
    'rod_prices','{"2":600,"3":1200,"4":1800,"5":2400,"6":3000}'::jsonb,'trophy_chance',0.04,
    'tackle_prices','{"2":600,"3":1500,"4":3000,"5":5500,"6":9000}'::jsonb,'tackle_zones','[0.30,0.26,0.22,0.18,0.14,0.10]'::jsonb,
    'reel_prices','{"2":500,"3":1300,"4":2800,"5":5000,"6":8000}'::jsonb,'reel_recovery','[0.5,0.6,0.7,0.8,0.9,1.0]'::jsonb,
@@ -72,7 +72,7 @@ BEGIN
     ('bait','worm',2,'Поймать 2 рыбы на червя',180,'maggot',4)
    ) v(kind,target,goal,text,money,bait,qty) WHERE v.kind<>'sea' OR p.boat_owned=1 ORDER BY random() LIMIT 3;
   END IF;
-  RETURN jsonb_build_object('username',(SELECT username FROM "user" WHERE id=u),'money',p.money,'tutorial_done',p.tutorial_done=1,'boat_owned',p.boat_owned=1,'bells_owned',p.bells_owned=1,'rod_level',p.rod_level,'tackle_level',p.tackle_level,'reel_level',p.reel_level,
+  RETURN jsonb_build_object('username',(SELECT username FROM "user" WHERE id=u),'money',p.money,'tutorial_done',p.tutorial_done=1,'boat_owned',p.boat_owned=1,'bells_owned',p.bells_owned=1,'rod_level',p.rod_level,'tackle_level',p.tackle_level,'reel_level',p.reel_level,'groundbait_qty',p.groundbait_qty,
    'baits',coalesce((SELECT jsonb_object_agg(b.code,pb.qty) FROM player_bait pb JOIN bait b ON b.id=pb.bait_id WHERE pb.user_id=u),'{}'),
    'inventory',coalesce((SELECT jsonb_agg(to_jsonb(x)-'sort_price' ORDER BY sort_price) FROM (SELECT f.name,count(*) n,round(sum(c.weight_kg)::numeric,2) kg,max(c.weight_kg) best,sum(c.price) earned,f.price sort_price FROM catch c JOIN fish f ON f.id=c.fish_id WHERE c.user_id=u AND c.kept=1 GROUP BY f.id) x),'[]'),
    'last',coalesce((SELECT jsonb_agg(to_jsonb(x)-'id' ORDER BY id DESC) FROM (SELECT c.id,f.name fish,l.name location,c.weight_kg weight,c.kept,c.price,c.trophy,c.caught_at FROM catch c JOIN fish f ON f.id=c.fish_id JOIN location l ON l.id=c.location_id WHERE c.user_id=u ORDER BY c.id DESC LIMIT 8) x),'[]'),
@@ -131,6 +131,9 @@ BEGIN
    IF p.bells_owned=1 THEN RETURN '{"status":409,"body":{"ok":false,"error":"Колокольчики уже приобретены"}}'; END IF;
    IF p.money<200 THEN RAISE EXCEPTION 'Не хватает денег: колокольчики стоят 200 ₽.' USING ERRCODE='P0001'; END IF;
    UPDATE player SET money=money-200,bells_owned=1 WHERE user_id=u;
+  ELSIF d->>'item'='groundbait' THEN
+   IF n NOT BETWEEN 1 AND 99 OR p.money<120::bigint*n THEN RAISE EXCEPTION 'Не хватает денег: прикормка стоит % ₽.', 120*greatest(n,1) USING ERRCODE='P0001'; END IF;
+   UPDATE player SET money=money-120*n,groundbait_qty=groundbait_qty+n WHERE user_id=u;
   ELSIF d->>'item'='rod' THEN
    -- последовательный апгрейд: купить можно только следующую удочку (rod_level+1)
    SELECT max(id) INTO n FROM rod;
@@ -198,6 +201,13 @@ BEGIN
   RETURN jsonb_build_object('status',200,'body',jsonb_build_object('ok',true,'money',q.reward_money,'bait',q.reward_bait,'bait_qty',q.reward_bait_qty));
  ELSIF action='tutorial' THEN
   UPDATE player SET tutorial_done=CASE WHEN coalesce((d->>'done')::boolean,false) THEN 1 ELSE 0 END WHERE user_id=u;
+ ELSIF action='chum' THEN
+  SELECT * INTO l FROM location WHERE code=d->>'location';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Неизвестная локация.' USING ERRCODE='P0001'; END IF;
+  IF l.code='sea' AND p.boat_owned=0 THEN RETURN '{"status":403,"body":{"ok":false,"error":"Для морской рыбалки необходимо приобрести лодку за 10 000 ₽."}}'; END IF;
+  IF p.groundbait_qty<1 THEN RAISE EXCEPTION 'Прикормка закончилась — купите её в магазине.' USING ERRCODE='P0001'; END IF;
+  UPDATE player SET groundbait_qty=groundbait_qty-1 WHERE user_id=u AND groundbait_qty>0;
+  RETURN jsonb_build_object('status',200,'body',jsonb_build_object('ok',true,'groundbait_qty',p.groundbait_qty-1,'duration',180));
  ELSE RAISE EXCEPTION 'Unknown action';
  END IF;
  RETURN '{"status":200,"body":{"ok":true}}';

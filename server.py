@@ -2,7 +2,8 @@
 Запуск: python server.py  ->  http://localhost:8000"""
 import json, os, random, sqlite3, sys, time
 from contextlib import closing
-from sea import (migrate as migrate_sea, BOAT_PRICE, BELLS_PRICE, MIN_CATCH_SECONDS, ROD_PRICES,
+from sea import (migrate as migrate_sea, BOAT_PRICE, BELLS_PRICE, GROUNDBAIT_PRICE,
+                 GROUNDBAIT_DURATION, MIN_CATCH_SECONDS, ROD_PRICES,
                  TACKLE_PRICES, TACKLE_ZONES, REEL_PRICES, REEL_RECOVERY)
 import auth
 import multiplayer
@@ -77,7 +78,9 @@ def _get_config(c):
                      'baits': {x['code']: x['bite_weight'] for x in c.execute(
                          'SELECT b.code,fb.bite_weight FROM fish_bait fb JOIN bait b ON b.id=fb.bait_id WHERE fb.fish_id=?', (r['id'],))}})
     return {'locations': locs, 'rods': rods, 'baits': baits, 'fish': fish,
-            'boat_price': BOAT_PRICE, 'bells_price': BELLS_PRICE, 'min_catch_seconds': MIN_CATCH_SECONDS,
+            'boat_price': BOAT_PRICE, 'bells_price': BELLS_PRICE,
+            'groundbait_price': GROUNDBAIT_PRICE, 'groundbait_duration': GROUNDBAIT_DURATION,
+            'min_catch_seconds': MIN_CATCH_SECONDS,
             'rod_prices': ROD_PRICES, 'trophy_chance': TROPHY_CHANCE,
             'tackle_prices': TACKLE_PRICES, 'tackle_zones': TACKLE_ZONES,
             'reel_prices': REEL_PRICES, 'reel_recovery': REEL_RECOVERY,
@@ -91,7 +94,7 @@ def get_state(uid):
 
 def _get_state(c, uid):
     p = c.execute('''SELECT u.username, p.money, p.tutorial_done, p.boat_owned, p.bells_owned, p.rod_level,
-                            p.tackle_level, p.reel_level
+                            p.tackle_level, p.reel_level, p.groundbait_qty
                      FROM player p JOIN user u ON u.id=p.user_id WHERE p.user_id=?''', (uid,)).fetchone()
     baits = {r['code']: r['qty'] for r in c.execute(
         '''SELECT b.code,pb.qty FROM player_bait pb JOIN bait b ON b.id=pb.bait_id WHERE pb.user_id=?''', (uid,))}
@@ -119,6 +122,7 @@ def _get_state(c, uid):
             'baits': baits, 'inventory': inv, 'last': last, 'boat_owned': bool(p['boat_owned']),
             'bells_owned': bool(p['bells_owned']), 'rod_level': p['rod_level'],
             'tackle_level': p['tackle_level'], 'reel_level': p['reel_level'],
+            'groundbait_qty': p['groundbait_qty'],
             'world': {'day_part': world.day_part(now), 'day_part_left': world.day_part_left(now),
                       'weather': weather, 'weather_left': max(0, int(weather_until - now))},
             'quests': quests, 'achievements': achievements, 'diary': diary}
@@ -201,6 +205,16 @@ def post_buy(d, uid):
             if p['money'] < BELLS_PRICE:
                 return 400, {'ok': False, 'error': f'Не хватает денег: колокольчики стоят {BELLS_PRICE} ₽.'}
             c.execute('UPDATE player SET money=money-?,bells_owned=1 WHERE user_id=?', (BELLS_PRICE, uid))
+            c.commit()
+            return 200, {'ok': True}
+        if d.get('item') == 'groundbait':
+            if not 1 <= n <= 99:
+                return 400, {'ok': False, 'error': 'Некорректное количество'}
+            money = c.execute('SELECT money FROM player WHERE user_id=?', (uid,)).fetchone()['money']
+            cost = GROUNDBAIT_PRICE * n
+            if money < cost:
+                return 400, {'ok': False, 'error': f'Не хватает денег: прикормка стоит {cost:,} ₽.'.replace(',', ' ')}
+            c.execute('UPDATE player SET money=money-?,groundbait_qty=groundbait_qty+? WHERE user_id=?', (cost, n, uid))
             c.commit()
             return 200, {'ok': True}
         if d.get('item') == 'rod':
@@ -301,6 +315,23 @@ def post_tutorial(d, uid):
         c.commit()
     return 200, {'ok': True}
 
+def post_chum(d, uid):                     # прикормка: -1 из запаса, активна на локации
+    with closing(conn()) as c:
+        c.execute('BEGIN IMMEDIATE')
+        loc = c.execute('SELECT id,code FROM location WHERE code=?', (d.get('location'),)).fetchone()
+        if not loc:
+            return 400, {'ok': False, 'error': 'Неизвестная локация.'}
+        p = c.execute('SELECT boat_owned,groundbait_qty FROM player WHERE user_id=?', (uid,)).fetchone()
+        if loc['code'] == 'sea' and not p['boat_owned']:
+            return 403, {'ok': False, 'error': f'Для морской рыбалки необходимо приобрести лодку за {BOAT_PRICE:,} ₽.'.replace(',', ' ')}
+        if p['groundbait_qty'] < 1:
+            return 400, {'ok': False, 'error': 'Прикормка закончилась — купите её в магазине.'}
+        cur = c.execute('UPDATE player SET groundbait_qty=groundbait_qty-1 WHERE user_id=? AND groundbait_qty>0', (uid,))
+        if cur.rowcount != 1:
+            return 400, {'ok': False, 'error': 'Прикормка закончилась — купите её в магазине.'}
+        c.commit()
+    return 200, {'ok': True, 'groundbait_qty': p['groundbait_qty'] - 1, 'duration': GROUNDBAIT_DURATION}
+
 def post_presence(d, uid):                 # хартбит: кто рядом + лента уловов в ответ
     with closing(conn()) as c:
         c.execute('BEGIN IMMEDIATE')
@@ -399,6 +430,7 @@ post_buy = remote_game('buy', post_buy)
 post_catch = remote_game('catch', post_catch)
 post_quest_claim = remote_game('quest_claim', post_quest_claim)
 post_tutorial = remote_game('tutorial', post_tutorial)
+post_chum = remote_game('chum', post_chum)
 post_presence = remote_game('presence', post_presence)
 post_register = remote_auth(supabase_db.register, post_register)
 post_login = remote_auth(supabase_db.login, post_login)
@@ -406,7 +438,7 @@ post_logout = remote_auth(supabase_db.logout, post_logout)
 
 POST = {'/api/cast': post_cast, '/api/buy': post_buy, '/api/catch': post_catch,
         '/api/quest/claim': post_quest_claim, '/api/tutorial': post_tutorial,
-        '/api/presence': post_presence}
+        '/api/chum': post_chum, '/api/presence': post_presence}
 AUTH_POST = {'/api/register': post_register, '/api/login': post_login, '/api/logout': post_logout}
 
 class Handler(SimpleHTTPRequestHandler):

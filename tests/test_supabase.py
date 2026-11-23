@@ -52,7 +52,7 @@ class SupabaseTests(unittest.TestCase):
         fake = Mock()
         fake.rpc.return_value = {'status': 200, 'body': {'ok': True}}
         with patch.object(server, 'DB_BACKEND', 'supabase'), patch.object(server, 'SUPABASE', fake), patch.object(server.sqlite3, 'connect', side_effect=AssertionError('SQLite used')):
-            for path, action in (('/api/cast','cast'),('/api/buy','buy'),('/api/catch','catch'),('/api/quest/claim','quest_claim'),('/api/tutorial','tutorial')):
+            for path, action in (('/api/cast','cast'),('/api/buy','buy'),('/api/catch','catch'),('/api/quest/claim','quest_claim'),('/api/tutorial','tutorial'),('/api/chum','chum')):
                 self.assertEqual(server.POST[path]({'x': 1}, 7), (200, {'ok': True}))
                 fake.rpc.assert_called_with(action, {'uid': 7, 'data': {'x': 1}})
             fake.rpc.return_value = {'ok': True}
@@ -85,7 +85,8 @@ class SupabaseTests(unittest.TestCase):
         self.assertEqual([m.name for m in migs],
                          ['001_weighted_catch_price.sql', '002_boat_price_10000_and_spin_bait.sql',
                           '003_bells_200.sql', '004_leaderboard.sql', '005_fight_styles_rods_trophies.sql',
-                          '006_tackle_reels.sql', '007_linear_rods.sql', '008_presence_and_feed.sql'])
+                          '006_tackle_reels.sql', '007_linear_rods.sql', '008_presence_and_feed.sql',
+                          '009_groundbait.sql'])
         last = migs[-1].read_text(encoding='utf-8')
         # заголовок-комментарий допускается; тело функции должно совпадать с api посимвольно
         self.assertIn(api_fn, last, 'последняя миграция устарела относительно db/supabase_api.sql')
@@ -111,5 +112,9 @@ class SupabaseTests(unittest.TestCase):
         self.assertIn("d->>'item'='reel'", last)
         self.assertNotIn("d->>'item'='tackle'", migs[4].read_text(encoding='utf-8'))
         self.assertIn("action='presence'", last)                     # рыбаки рядом и лента — только в 008
-        self.assertIn('CREATE TABLE IF NOT EXISTS presence', last)
+        self.assertIn('CREATE TABLE IF NOT EXISTS presence', migs[7].read_text(encoding='utf-8'))
         self.assertNotIn("action='presence'", migs[6].read_text(encoding='utf-8'))
+        self.assertIn('ADD COLUMN IF NOT EXISTS groundbait_qty', last) # прикормка — только в 009
+        self.assertIn("d->>'item'='groundbait'", last)
+        self.assertIn("action='chum'", last)
+        self.assertNotIn("action='chum'", migs[7].read_text(encoding='utf-8'))

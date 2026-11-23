@@ -1,6 +1,8 @@
 """Идемпотентное расширение существующих сохранений морской рыбалкой."""
 BOAT_PRICE = 10000
 BELLS_PRICE = 200
+GROUNDBAIT_PRICE = 120
+GROUNDBAIT_DURATION = 180
 MIN_CATCH_SECONDS = 12
 # Последовательный апгрейд удочек: id следующей → цена (бамбуковая бесплатна).
 ROD_PRICES = {2: 600, 3: 1200, 4: 1800, 5: 2400, 6: 3000}
@@ -25,6 +27,8 @@ def migrate(c):
         c.execute('ALTER TABLE player ADD COLUMN tackle_level INTEGER NOT NULL DEFAULT 1')
     if 'reel_level' not in columns:
         c.execute('ALTER TABLE player ADD COLUMN reel_level INTEGER NOT NULL DEFAULT 1')
+    if 'groundbait_qty' not in columns:
+        c.execute('ALTER TABLE player ADD COLUMN groundbait_qty INTEGER NOT NULL DEFAULT 0')
     if c.execute("""SELECT 1 FROM rod WHERE id=2 AND name='Спиннинг'
                     AND EXISTS(SELECT 1 FROM rod WHERE id=3 AND name='Карбон')""").fetchone():
         c.execute('UPDATE player SET rod_level=CASE rod_level WHEN 2 THEN 3 WHEN 3 THEN 6 ELSE rod_level END')

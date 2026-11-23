@@ -164,9 +164,10 @@ def _rebuild_player(c, uid):
         bells_owned INTEGER NOT NULL DEFAULT 0,
         rod_level INTEGER NOT NULL DEFAULT 1,
         tackle_level INTEGER NOT NULL DEFAULT 1,
-        reel_level INTEGER NOT NULL DEFAULT 1)''')
-    c.execute('''INSERT INTO player(user_id,money,tutorial_done,boat_owned,bells_owned,rod_level,tackle_level,reel_level)
-                 SELECT ?,money,tutorial_done,boat_owned,bells_owned,rod_level,tackle_level,reel_level FROM player_migrate_old''', (uid,))
+        reel_level INTEGER NOT NULL DEFAULT 1,
+        groundbait_qty INTEGER NOT NULL DEFAULT 0 CHECK(groundbait_qty>=0))''')
+    c.execute('''INSERT INTO player(user_id,money,tutorial_done,boat_owned,bells_owned,rod_level,tackle_level,reel_level,groundbait_qty)
+                 SELECT ?,money,tutorial_done,boat_owned,bells_owned,rod_level,tackle_level,reel_level,groundbait_qty FROM player_migrate_old''', (uid,))
     c.execute('DROP TABLE player_migrate_old')
 
 
