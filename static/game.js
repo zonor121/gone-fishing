@@ -25,6 +25,7 @@ const rub = n => n.toLocaleString('ru-RU');   // «10 000» — все сумм�
 let S = 'idle', pw = 0, hold = 0, tm = 0, bx = 0, fish = null, w = 0, t = 0, d = 1;
 let cast = 0, sd = 0, sg = 2, tt = 0, last = 0, outT = 0, outKeep = false, outMsg = '', fatigue = 0;
 let dockWet = 0;                        // 0 сухо → 1 промокло: в дождь растёт (~25 с), без дождя сохнет (~45 с)
+let groundbaitQty = 0, groundbaitPrice = 120, groundbaitDuration = 180, castBonus = null, chumUiTick = 0;
 const rnd = (a, b) => a + Math.random() * (b - a);
 // Награда зависит от веса: 0.75× базовой цены при min, 1.75× при max — та же формула, что и на сервере.
 const priceFor = (f, w) => Math.round(f.price * (f.max > f.min ? .75 + (Math.min(Math.max(w, f.min), f.max) - f.min) / (f.max - f.min) : 1));
@@ -53,6 +54,8 @@ async function boot() {
   if (cfg.reel_recovery) reelRecovery = cfg.reel_recovery;
   BL = cfg.baits; BL.forEach(b => B[b.code] = b.name);
   F = cfg.fish; boatPrice = cfg.boat_price; bellsPrice = cfg.bells_price; minCatchSeconds = cfg.min_catch_seconds;
+  if (cfg.groundbait_price) groundbaitPrice = cfg.groundbait_price;
+  if (cfg.groundbait_duration) groundbaitDuration = cfg.groundbait_duration;
   if (cfg.world) {  // каталог времени суток и погоды — с сервера, единый источник
     DAY_PARTS = cfg.world.day_parts.map(p => p.code);
     cfg.world.day_parts.forEach(p => DAY_PART_NAMES[p.code] = p.name);
@@ -71,6 +74,10 @@ async function boot() {
 
 function updateLocationInfo() {
   const location = L[sl.value];
+  if (typeof resetWaterFX === 'function') resetWaterFX();
+  if (typeof resetHotspots === 'function') resetHotspots(sl.value);
+  castBonus = null;
+  updateChumUI();
   $('scene-name').textContent = location.name;
   $('location-current').textContent = location.name;
   $('scene-detail').textContent = location.code === 'sea' ? 'Открытое море · рыбалка с лодки' : location.current ? 'Течение · речной берег' : location.forest ? 'Тихая вода · хвойный лес' : 'Тихая вода · открытый берег';
@@ -90,6 +97,7 @@ async function refresh() {
   if (res.status === 401 && window.showAuth) { showAuth('login'); return; }   // сессия истекла
   const s = await res.json();
   M = s.money; Q = s.baits; INV = s.inventory; tutDone = s.tutorial_done; boatOwned = s.boat_owned; bellsOwned = s.bells_owned;
+  groundbaitQty = s.groundbait_qty || 0;
   rodLevel = s.rod_level === undefined ? null : s.rod_level; fillRodSelect();
   tackleLevel = s.tackle_level === undefined ? null : s.tackle_level;
   reelLevel = s.reel_level === undefined ? null : s.reel_level;
@@ -97,6 +105,7 @@ async function refresh() {
   $('userbox').hidden = !s.username;
   setWorldState(s);
   $('money').textContent = M; fillBaits();
+  updateChumUI();
   const n = INV.reduce((a, r) => a + r.n, 0);
   $('stat').textContent = `В инвентаре рыб: ${n}`;
   $('hist').innerHTML = s.last.length ? '<thead><tr><th>Когда</th><th>Рыба</th><th>Вес</th><th>Место</th><th>Результат</th></tr></thead><tbody>' + s.last.map(r => `<tr><td>${r.caught_at}</td><td>${r.fish}${r.trophy ? ' <span class="trophy-tag">трофей</span>' : ''}</td><td>${r.weight.toFixed(2)} кг</td><td>${r.location}</td><td>${r.kept ? '+' + r.price + ' ₽' : 'отпущена'}</td></tr>`).join('') + '</tbody>' : '<tbody><tr><td class="empty">Здесь появится ваш первый улов.<br>Приготовьте снасти и забросьте удочку.</td></tr></tbody>';
@@ -125,6 +134,29 @@ $('tn').onclick = () => setTut(1);
 $('ts').onclick = () => { setTut(-1); post('/api/tutorial', {done: 1}); };
 $('btut').onclick = () => { if (S === 'idle') { showGuide(false); setTut(0); } };
 
+function updateChumUI() {
+  const chumBtn = $('bchum');
+  if (chumBtn) {
+    chumBtn.textContent = `Прикормить · ×${groundbaitQty}`;
+    chumBtn.disabled = S !== 'idle' || groundbaitQty < 1 || (sl.value === 'sea' && !boatOwned);
+  }
+  const chip = $('hotspot-chip');
+  if (chip) {
+    const b = typeof hotspotState !== 'undefined' && hotspotState.baited && hotspotState.baited.ttl > 0 ? hotspotState.baited : null;
+    const parts = [];
+    if (b) {
+      const sec = Math.max(0, Math.ceil(b.ttl));
+      parts.push(`Прикормка ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`);
+    }
+    if ((S === 'wait' || S === 'bite' || S === 'reel') && castBonus) {
+      parts.push(castBonus.kind === 'baited' ? 'В прикормке · бонус' : 'Горячая точка · бонус');
+    }
+    chip.textContent = parts.join(' · ');
+    chip.hidden = !parts.length;
+    if (chip.classList) chip.classList.toggle('is-hit', Boolean(castBonus && !b));
+  }
+}
+
 // ---- управление ----
 function down() {
   if ($('fishing-view').hidden) return;
@@ -132,14 +164,19 @@ function down() {
   if (S === 'idle') {
     if (sl.value === 'sea' && !boatOwned) { say(`Сначала приобретите лодку за ${rub(boatPrice)} ₽ в магазине.`); return; }
     if (!(Q[sb.value] > 0)) { say('Наживка закончилась — купите в магазине или выберите другую.'); return; }
-    S = 'charge'; pw = 0; say('');
-  } else if (S === 'wait') { S = 'idle'; fish = null; lock(false); say('Вы смотали удочку.'); }
+    S = 'charge'; pw = 0; castBonus = null; say(''); updateChumUI();
+  } else if (S === 'wait') { S = 'idle'; fish = null; castBonus = null; lock(false); say('Вы смотали удочку.'); updateChumUI(); }
   else if (S === 'bite') {
     S = 'reel'; t = .2; d = 1; sd = 0; sg = 1; fatigue = 0;
-    trophy = trophyChance > 0 && Math.random() < trophyChance;
-    w = trophy ? fish.max * rnd(1.25, 1.5) : rnd(fish.min, fish.max);
+    const effTrophy = trophyChance * (castBonus ? castBonus.trophyMult : 1);
+    trophy = effTrophy > 0 && Math.random() < effTrophy;
+    w = trophy
+      ? fish.max * rnd(1.25, 1.5)
+      : (castBonus && castBonus.weightBias
+        ? fish.min + (fish.max - fish.min) * Math.pow(Math.random(), 1 - castBonus.weightBias)
+        : rnd(fish.min, fish.max));
     say('Рыба на крючке! Чередуйте подмотку и ослабление.'); if (tut === 2) setTut(3);
-    mpNotify();
+    mpNotify(); updateChumUI();
   } else if (S === 'reel') hold = 1;
   label();
 }
@@ -161,6 +198,27 @@ function up() {
 }
 btn.onpointerdown = e => { e.preventDefault(); down(); };
 btn.onpointerup = btn.onpointerleave = btn.onpointercancel = up;
+if ($('bchum')) $('bchum').onclick = async e => {
+  if (S !== 'idle' || $('fishing-view').hidden || ($('auth') && !$('auth').hidden)) return;
+  if (sl.value === 'sea' && !boatOwned) { say(`Сначала приобретите лодку за ${rub(boatPrice)} ₽ в магазине.`); return; }
+  if (groundbaitQty < 1) { say('Прикормка закончилась — купите её в магазине.'); return; }
+  const chumBtn = $('bchum');
+  if (e && e.detail && chumBtn.blur) chumBtn.blur();
+  chumBtn.disabled = true;
+  try {
+    const r = await post('/api/chum', {location: sl.value});
+    if (!r.ok) { say(r.error || 'Не удалось прикормить место.'); updateChumUI(); return; }
+    groundbaitQty = r.groundbait_qty !== undefined ? r.groundbait_qty : Math.max(0, groundbaitQty - 1);
+    if (typeof activateGroundbait === 'function') activateGroundbait(sl.value, r.duration || groundbaitDuration);
+    if (typeof floatDip === 'function') floatDip();
+    say('Прикормка в воде! Забрасывайте в тёплые круги для бонуса к клёву и трофеям.');
+    updateChumUI();
+    await refresh();
+  } catch (e) {
+    say('Нет связи с сервером. Не удалось прикормить.');
+    updateChumUI();
+  }
+};
 let spaceHeld = false;
 addEventListener('keydown', e => {
   if (e.code !== 'Space' || e.ctrlKey || e.metaKey || e.altKey || $('fishing-view').hidden ||
@@ -214,22 +272,48 @@ function pick() {
   let x = Math.random() * sum, i = 0;
   while (x > ws[i]) { x -= ws[i]; i++; }
   fish = c[i];
-  tm = Math.max(minCatchSeconds, rnd(2, 6) * (3 / sum) * (L[sl.value].current ? .85 : 1) + 1);
+  const spotWait = castBonus ? castBonus.waitMult : 1;
+  tm = Math.max(minCatchSeconds, (rnd(2, 6) * (3 / sum) * (L[sl.value].current ? .85 : 1) + 1) * spotWait);
 }
 function end(m, fail) {
-  S = 'idle'; fish = null; hold = 0; lock(false); say(m); label();
+  S = 'idle'; fish = null; castBonus = null; hold = 0; lock(false); say(m); label(); updateChumUI();
   if (fail && (tut === 2 || tut === 3)) setTut(1);
 }
 function update(dt) {
   tt += dt;
   dockWet = Math.max(0, Math.min(1, dockWet + (currentWeather() === 'rain' ? dt / 25 : -dt / 45)));
+  if (typeof updateHotspots === 'function') updateHotspots(dt, sl.value, tt);
+  if (typeof hotspotState !== 'undefined' && hotspotState.baited) {
+    chumUiTick += dt;
+    if (chumUiTick >= 0.5) { chumUiTick = 0; updateChumUI(); }
+  }
   if (castPending) return;
   if (S === 'charge') pw = Math.min(1, pw + dt * .7);
   if (S === 'fly') {
     cast += dt / .8;
-    if (cast >= 1) { S = 'wait'; pick(); say(fish ? 'Ждём поклёвку…' : 'Тишина… возможно, эта наживка здесь не подходит.'); label(); }
+    if (cast >= 1) {
+      S = 'wait';
+      castBonus = typeof checkHotspotHit === 'function' ? checkHotspotHit(bx) : null;
+      pick();
+      say(!fish
+        ? 'Тишина… возможно, эта наживка здесь не подходит.'
+        : (castBonus ? `${castBonus.label}! Клёв быстрее, возможен крупный улов…` : 'Ждём поклёвку…'));
+      label();
+      updateChumUI();
+      if (typeof spawnSplash === 'function') {
+        const tp = waterPoint(bx);
+        spawnSplash(tp[0] + (typeof windDrift === 'function' ? windDrift(tt) : 0), tp[1], tp[2], 1.1);
+      }
+    }
   } else if (S === 'wait' && fish) {
-    tm -= dt; if (tm <= 0) { S = 'bite'; tm = 2; say('Поклёвка!'); floatDip(); if (bellsOwned) bellChime(); label(); }
+    tm -= dt;
+    if (tm <= 0) {
+      S = 'bite'; tm = 2; say('Поклёвка!'); floatDip(); if (bellsOwned) bellChime(); label();
+      if (typeof spawnSplash === 'function') {
+        const tp = waterPoint(bx);
+        spawnSplash(tp[0] + (typeof windDrift === 'function' ? windDrift(tt) : 0), tp[1], tp[2], .7);
+      }
+    }
   } else if (S === 'bite') {
     tm -= dt; if (tm <= 0) end('Поклёвка пропущена — рыба ушла.', 1);
   } else if (S === 'reel') {
@@ -251,13 +335,41 @@ function update(dt) {
     }
   } else if (S === 'out') {
     outT += dt / .9;
+    if (!outKeep && outT >= .75 && typeof spawnSplash === 'function' && typeof waterFX !== 'undefined' && !waterFX.outSplashDone) {
+      waterFX.outSplashDone = true;
+      const op = waterPoint(0);
+      spawnSplash(op[0], op[1], op[2], 1.25);
+    }
     if (outT >= 1) { end(outMsg); if (tut === 4) setTut(5); }
+  }
+  if (typeof updateWaterFX === 'function') {
+    const wx = typeof currentWeather === 'function' ? currentWeather() : 'clear';
+    const sea = sl.value === 'sea';
+    let fxPx = null, fxPy = 0, fxSc = 1;
+    if (S === 'wait' || S === 'bite') {
+      const target = waterPoint(bx);
+      fxPx = target[0] + (typeof windDrift === 'function' ? windDrift(tt) : 0);
+      fxPy = target[1];
+      fxSc = target[2];
+    } else if (S === 'reel') {
+      const p = waterPoint(bx * Math.max(0, d));
+      fxPx = p[0] + Math.sin(tt * 6) * (sd > 0 ? 10 : 2);
+      fxPy = p[1];
+      fxSc = p[2];
+    }
+    updateWaterFX(dt, S, {
+      sea, weather: wx, px: fxPx, py: fxPy, scale: fxSc,
+      surge: sd, hold, weight: w, style: fish ? fish.style : 'calm',
+      dist: d, dx: Math.cos(tt * 6) * (sd > 0 ? 10 : 2), time: tt
+    });
   }
 }
 async function finish(keep) {
   $('card').firstElementChild.classList.remove('hl');
   $('card').style.display = 'none';
-  S = 'out'; outT = 0; outKeep = keep; label();
+  S = 'out'; outT = 0; outKeep = keep;
+  if (typeof waterFX !== 'undefined') waterFX.outSplashDone = false;
+  label();
   outMsg = keep ? `Рыба в инвентаре, +${catchPrice()} ₽.` : 'Рыба отпущена.';
   try {
     const result = await post('/api/catch', {fish_id: fish.id, location: sl.value, weight: w, kept: keep, trophy});
@@ -314,13 +426,22 @@ function upgradeShopSection(kind) {
   return `<section class="boat-product"><div><h3>${name} · уровень ${level + 1}</h3><p>${desc}</p><p class="boat-progress">${effect(level)} → ${effect(level + 1)} · Накоплено ${M.toLocaleString('ru-RU')} из ${rub(price)} ₽</p></div><button data-${kind}>Купить · ${rub(price)} ₽</button></section>`;
 }
 function renderShop() {
+  const groundbaitShop = `<section class="boat-product"><div><h3>Прикормка · ${rub(groundbaitPrice)} ₽</h3><p>Создаёт кормовое пятно на ${Math.round(groundbaitDuration / 60)} мин: ускоряет клёв, привлекает рыбу крупнее и повышает шанс трофея.</p><p class="boat-progress">В запасе: ×${groundbaitQty}</p></div><div class="shop-qty"><button data-groundbait="1">+1 · ${rub(groundbaitPrice)} ₽</button> <button data-groundbait="5">+5 · ${rub(groundbaitPrice * 5)} ₽</button></div></section>`;
   $('shopbody').innerHTML = `<div>На счёте: <b>${M} ₽</b></div><table>` + BL.map(b => {
     const fl = F.filter(f => f.baits[b.code]).map(f => f.name).join(', ');
     return `<tr><td><b>${b.name}</b> — ${b.price} ₽<div class="fl">Ловится: ${fl}</div></td><td>в запасе: ${Q[b.code] || 0}</td>
       <td><button data-b="${b.code}" data-n="1">+1</button> <button data-b="${b.code}" data-n="10">+10</button></td></tr>`;
-  }).join('') + `</table>` + rodShopSection() + upgradeShopSection('tackle') + upgradeShopSection('reel') + `<section class="boat-product"><div><h3>Лодка</h3><p>Откройте морскую рыбалку навсегда. Четыре новых вида рыб, открытая вода и ловля с лодки.</p><p class="boat-progress">${boatOwned ? 'Лодка приобретена · море открыто' : `Накоплено ${M.toLocaleString('ru-RU')} из ${rub(boatPrice)} ₽`}</p></div><button data-boat ${boatOwned ? 'disabled' : ''}>${boatOwned ? 'Уже куплена' : `Купить лодку · ${rub(boatPrice)} ₽`}</button></section><section class="boat-product"><div><h3>Колокольчики</h3><p>Звон при каждой поклёвке — подсечку не пропустите. Работает во всех локациях, покупка навсегда.</p><p class="boat-progress">${bellsOwned ? 'Колокольчики приобретены · звон включён' : `Накоплено ${M.toLocaleString('ru-RU')} из ${rub(bellsPrice)} ₽`}</p></div><button data-bells ${bellsOwned ? 'disabled' : ''}>${bellsOwned ? 'Уже куплены' : `Купить колокольчики · ${rub(bellsPrice)} ₽`}</button></section>`;
+  }).join('') + `</table>` + groundbaitShop + rodShopSection() + upgradeShopSection('tackle') + upgradeShopSection('reel') + `<section class="boat-product"><div><h3>Лодка</h3><p>Откройте морскую рыбалку навсегда. Четыре новых вида рыб, открытая вода и ловля с лодки.</p><p class="boat-progress">${boatOwned ? 'Лодка приобретена · море открыто' : `Накоплено ${M.toLocaleString('ru-RU')} из ${rub(boatPrice)} ₽`}</p></div><button data-boat ${boatOwned ? 'disabled' : ''}>${boatOwned ? 'Уже куплена' : `Купить лодку · ${rub(boatPrice)} ₽`}</button></section><section class="boat-product"><div><h3>Колокольчики</h3><p>Звон при каждой поклёвке — подсечку не пропустите. Работает во всех локациях, покупка навсегда.</p><p class="boat-progress">${bellsOwned ? 'Колокольчики приобретены · звон включён' : `Накоплено ${M.toLocaleString('ru-RU')} из ${rub(bellsPrice)} ₽`}</p></div><button data-bells ${bellsOwned ? 'disabled' : ''}>${bellsOwned ? 'Уже куплены' : `Купить колокольчики · ${rub(bellsPrice)} ₽`}</button></section>`;
 }
 $('shopbody').onclick = async e => {
+  const gb = e.target.closest('[data-groundbait]');
+  if (gb) {
+    gb.disabled = true;
+    const qty = Number(gb.dataset.groundbait) || 1;
+    const r = await post('/api/buy', {item: 'groundbait', qty}).catch(() => ({}));
+    $('shopmsg').textContent = r.ok ? `Прикормка (+${qty}) добавлена в запас.` : (r.error || 'Нет связи с сервером. Повторите покупку.');
+    await refresh(); renderShop(); return;
+  }
   if (e.target.closest('[data-rod]')) {
     e.target.disabled = true;
     const r = await post('/api/buy', {item: 'rod'}).catch(() => ({}));
@@ -361,7 +482,7 @@ function tackleReelInvSection() {
   return h;
 }
 function renderInv() {
-  $('invbody').innerHTML = `<h3>Лодка</h3><p>${boatOwned ? 'В собственности · морская рыбалка открыта навсегда' : `Не приобретена · ${rub(boatPrice)} ₽ в магазине`}</p><h3>Колокольчики</h3><p>${bellsOwned ? 'В собственности · звон при каждой поклёвке' : `Не приобретены · ${rub(bellsPrice)} ₽ в магазине`}</p><h3>Удочки</h3><table>` + R.map((r, i) => {
+  $('invbody').innerHTML = `<h3>Лодка</h3><p>${boatOwned ? 'В собственности · морская рыбалка открыта навсегда' : `Не приобретена · ${rub(boatPrice)} ₽ в магазине`}</p><h3>Колокольчики</h3><p>${bellsOwned ? 'В собственности · звон при каждой поклёвке' : `Не приобретены · ${rub(bellsPrice)} ₽ в магазине`}</p><h3>Прикормка</h3><p>В запасе: ×${groundbaitQty} · создаёт кормовое пятно на ${Math.round(groundbaitDuration / 60)} мин</p><h3>Удочки</h3><table>` + R.map((r, i) => {
     const owned = rodLevel === null || i < rodLevel;
     const cell = !owned ? '<span class="fl">купите в магазине</span>' : +sr.value === i ? 'выбрана' : `<button data-r="${i}" ${sr.disabled ? 'disabled' : ''}>Выбрать</button>`;
     return `<tr><td>${r.name}</td><td class="fl">дальность ${r.rng}, прочность ×${r.str}, скорость ×${r.spd}</td><td>${cell}</td></tr>`;
@@ -386,7 +507,7 @@ function rodTip() {
   const sway = reduce ? 0 : Math.sin(tt*1.4)*1.3;
   const twitch = !reduce && S === 'bite' ? Math.sin(tt*30)*1.6*Math.max(0, tm/2) : 0;
   const jerk = !reduce && S === 'reel' && sd > 0 ? sd*7 : 0;
-  return [448 + back*110 - bend*.2 + sway + jerk*.6 + twitch, 150 - back*115 - bend*.55 + sway + jerk + twitch*.6];
+  return [470 + back*90 - bend*.42 + sway + jerk*.6 + twitch, 118 - back*70 + bend*.28 + sway + jerk + twitch*.6];
 }
 function bar(x, y, wd, v, lab, col, dz) {
   g.fillStyle = 'rgba(0,0,0,.4)'; g.fillRect(x, y, wd, 16);
@@ -423,36 +544,75 @@ function draw() {
   }
   drawNearbyAnglers(time);
   drawFog(g, time);
+  const P = typeof getPalette === 'function' ? getPalette() : null;
+  if (typeof drawHotspots === 'function') {
+    drawHotspots(g, time, P, {sea: l.code === 'sea', activeHit: (S === 'wait' || S === 'bite' || S === 'reel') ? castBonus : null});
+  }
   const [tx, ty] = rodTip(), target=waterPoint(bx);
   let px=null, py=0, scale=1;
   if(S==='fly') {px=tx+(target[0]-tx)*cast;py=ty+(target[1]-ty)*cast-Math.sin(cast*Math.PI)*90;scale=1-cast*.35;}
-  else if(S==='wait'||S==='bite') {px=target[0]+windDrift(time);py=target[1]+(S==='bite'?5+Math.sin(tt*30)*3:Math.sin(time*2)*1.3);scale=target[2];}
+  else if(S==='wait'||S==='bite') {
+    px=target[0]+windDrift(time);
+    const hasRealFloat = typeof drawRealisticFloat === 'function';
+    py=target[1]+(S==='bite' && !hasRealFloat ? 5+Math.sin(tt*30)*3 : Math.sin(time*2)*1.3);
+    scale=target[2];
+  }
   else if(S==='reel'||S==='res') {const p=waterPoint(bx*Math.max(0,d));px=p[0]+Math.sin(time*6)*(sd>0?10:2);py=p[1];scale=p[2];}
   if(px!==null){
-    g.strokeStyle='rgba(217,235,217,.35)';g.lineWidth=1;
-    for(let i=0;i<(S==='fly'?0:2);i++){const r=6+((time*9+i*12)%24);g.beginPath();g.ellipse(px,py+5,r*scale,r*scale*.22,0,0,7);g.stroke();}
-    g.strokeStyle=S==='reel'&&t>.8?'#ff8b72':'rgba(246,244,218,.85)';g.lineWidth=.9;
-    g.beginPath();g.moveTo(tx,ty);g.quadraticCurveTo((tx+px)/2,(ty+py)/2+(S==='reel'?(1-t)*28:20),px,py);g.stroke();
-    if(S==='reel'&&sd>0){g.strokeStyle='rgba(233,244,226,.7)';g.lineWidth=1.2;
+    if(typeof drawWaterFX!=='function') {
+      g.strokeStyle='rgba(217,235,217,.35)';g.lineWidth=1;
+      for(let i=0;i<(S==='fly'?0:2);i++){const r=6+((time*9+i*12)%24);g.beginPath();g.ellipse(px,py+5,r*scale,r*scale*.22,0,0,7);g.stroke();}
+    }
+    if((S==='reel'||S==='res')&&typeof drawFightWaterFX==='function') {
+      drawFightWaterFX(g,px,py,scale,fish,w,d,sd,fatigue,time,P,{sea:l.code==='sea'});
+    }
+    if(S==='fly'||S==='wait'||S==='bite') {
+      if(typeof drawRealisticFloat==='function') {
+        drawRealisticFloat(g,px,py,scale,S,time,P,{castProgress:cast,waterY:target[1],bitePhase:tt*30,sea:l.code==='sea'});
+      } else {
+        g.save();g.translate(px,py);g.scale(scale,scale);g.strokeStyle='#eee5c8';g.lineWidth=1;g.beginPath();g.moveTo(0,-12);g.lineTo(0,4);g.stroke();g.fillStyle='#ef613f';g.beginPath();g.ellipse(0,-5,3,6,0,0,7);g.fill();g.fillStyle='#f0e8cd';g.fillRect(-2,-2,4,4);g.restore();
+      }
+    }
+    const linePy = S==='bite'&&typeof drawRealisticFloat==='function' ? py+(3.5+Math.sin(tt*30)*2.2)*scale*.4 : py;
+    if(typeof drawFishingLine==='function') {
+      drawFishingLine(g,tx,ty,px,linePy,S,t,breakAt(),sd,time,P);
+    } else {
+      g.strokeStyle=S==='reel'&&t>.8?'#ff8b72':'rgba(246,244,218,.85)';g.lineWidth=.9;
+      g.beginPath();g.moveTo(tx,ty);g.quadraticCurveTo((tx+px)/2,(ty+py)/2+(S==='reel'?(1-t)*28:20),px,py);g.stroke();
+    }
+    if(S==='reel'&&sd>0&&typeof drawWaterFX!=='function'){g.strokeStyle='rgba(233,244,226,.7)';g.lineWidth=1.2;
       for(let i=0;i<3;i++){const a=-Math.PI/2+(i-1)*.55,r=(9+sd*12)*scale;
         g.beginPath();g.moveTo(px+Math.cos(a)*r*.35,py+Math.sin(a)*r*.35);g.lineTo(px+Math.cos(a)*r,py+Math.sin(a)*r);g.stroke();}}
-    // Рыба видна только в воздухе: анимация «забрать/отпустить» после решения.
-    if(S==='fly'||S==='wait'||S==='bite'){g.save();g.translate(px,py);g.scale(scale,scale);g.strokeStyle='#eee5c8';g.lineWidth=1;g.beginPath();g.moveTo(0,-12);g.lineTo(0,4);g.stroke();g.fillStyle='#ef613f';g.beginPath();g.ellipse(0,-5,3,6,0,0,7);g.fill();g.fillStyle='#f0e8cd';g.fillRect(-2,-2,4,4);g.restore();}
   } else if(S!=='out'){
-    g.strokeStyle='rgba(246,244,218,.8)';g.lineWidth=.8;g.beginPath();g.moveTo(tx,ty);g.lineTo(tx+3,ty+38);g.stroke();
+    if(typeof drawFishingLine==='function') drawFishingLine(g,tx,ty,null,0,S,0,1,0,time,P);
+    else {g.strokeStyle='rgba(246,244,218,.8)';g.lineWidth=.8;g.beginPath();g.moveTo(tx,ty);g.lineTo(tx+3,ty+38);g.stroke();}
   }
   if(S==='out'){
     const u=outT, [ox,oy]=waterPoint(0);
     g.save();g.translate(ox+(outKeep?140*u:0),outKeep?oy+(WY+90-oy)*u:oy-100*Math.sin(Math.PI*u));g.scale(outKeep?1+u:1-u*.6,outKeep?1+u:1-u*.6);drawFish(0,0);g.restore();
-    if(!outKeep&&u>.75){g.strokeStyle='rgba(233,244,226,.7)';g.beginPath();g.ellipse(ox,oy,60*(u-.75),15*(u-.75),0,0,7);g.stroke();}
+    if(!outKeep&&u>.75&&(typeof drawWaterFX!=='function'||matchMedia('(prefers-reduced-motion: reduce)').matches)){
+      g.strokeStyle='rgba(233,244,226,.7)';g.beginPath();g.ellipse(ox,oy,60*(u-.75),15*(u-.75),0,0,7);g.stroke();
+    }
   }
+  if(typeof drawWaterFX==='function') drawWaterFX(g,P);
   drawFirstPersonRod(tx,ty,time);
   g.restore();
   // Оттенок времени суток и эффекты погоды поверх сцены (см. world.js).
   dayTint(g); drawWeatherEffects(g, time);
-  if(S==='bite'){g.fillStyle='#fff3d2';g.font='600 28px sans-serif';g.textAlign='center';g.fillText('ПОДСЕКАЙ!',400,60);g.textAlign='left';}
-  if(S==='charge') bar(24,30,200,pw,'Сила заброса '+Math.round(pw*100)+'%','#f2b632');
-  if(S==='reel') {bar(24,30,220,t,'Натяжение лески',t>breakAt()-.15?'#ff5a4d':'#5fd08a',tackleLevel===null?.2:tackleZones[tackleLevel-1]);bar(280,30,220,1-Math.min(1,d),'Рыба приближается','#58b4f0');}
+  if(typeof drawHud==='function') {
+    drawHud(g, S, {
+      pw, tm, t, d, bx, sd,
+      targets: S === 'charge' && typeof getHotspotTargets === 'function' ? getHotspotTargets(R[sr.value].rng) : null,
+      breakThreshold: breakAt(),
+      dangerZone: tackleLevel===null?.2:tackleZones[tackleLevel-1],
+      time,
+      reduce: matchMedia('(prefers-reduced-motion: reduce)').matches
+    });
+  } else {
+    if(S==='bite'){g.fillStyle='#fff3d2';g.font='600 28px sans-serif';g.textAlign='center';g.fillText('ПОДСЕКАЙ!',400,60);g.textAlign='left';}
+    if(S==='charge') bar(24,30,200,pw,'Сила заброса '+Math.round(pw*100)+'%','#f2b632');
+    if(S==='reel') {bar(24,30,220,t,'Натяжение лески',t>breakAt()-.15?'#ff5a4d':'#5fd08a',tackleLevel===null?.2:tackleZones[tackleLevel-1]);bar(280,30,220,1-Math.min(1,d),'Рыба приближается','#58b4f0');}
+  }
 }
 let accumulator = 0;
 function loop(ts) {
