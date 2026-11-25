@@ -434,6 +434,42 @@ class FightTests(unittest.TestCase):
         result = self.probe("setup({tired: .4}); S = 'idle'; update(1); sample()")
         self.assertEqual(result['fatigue'], .4)
 
+    def test_background_realtime_advances_fly_wait_bite_and_out(self):
+        result = self.probe("""(() => {
+          setupCasting();
+          L = {lake: {code: 'lake', name: 'Озеро', current: false}};
+          F = [{id: 1, name: 'Карась', min: .2, max: 1.5, freq: 3, res: .4, price: 80, locs: ['lake'], baits: {worm: 1}}];
+          fishActive = () => true;
+          RAIN_BITE_MULT = .75;
+          minCatchSeconds = 12;
+          let chimes = 0;
+          bellChime = () => { chimes++; };
+          bellsOwned = true;
+          Math.random = () => 0.5;
+
+          // Заброс: 0.8с полёт + 12с ожидания + 0.5с окна поклёвки -> должна идти поклёвка.
+          S = 'fly'; cast = 0; bx = 120;
+          advanceRealTime(13.3);
+          const midState = S, midTm = tm, midFish = Boolean(fish);
+
+          // Пропуск оставшегося окна поклёвки.
+          advanceRealTime(2.5);
+          const afterMiss = S;
+
+          // Вытягивание/отпускание в фоне.
+          S = 'out'; outT = 0; outMsg = 'Готово'; tut = -1;
+          advanceRealTime(1.0);
+          return {midState, midTm, midFish, chimes, afterMiss, outDone: S, msg: $('msg').textContent};
+        })()""")
+        self.assertEqual(result['midState'], 'bite')
+        self.assertTrue(result['midFish'])
+        self.assertGreater(result['midTm'], 0)
+        self.assertLess(result['midTm'], 2)
+        self.assertEqual(result['chimes'], 1)
+        self.assertEqual(result['afterMiss'], 'idle')
+        self.assertEqual(result['outDone'], 'idle')
+        self.assertEqual(result['msg'], 'Готово')
+
 
 if __name__ == '__main__':
     unittest.main()

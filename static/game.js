@@ -63,12 +63,17 @@ async function boot() {
   }
   await refresh(); label(); btn.disabled = false; say('Снасти готовы. Можно забрасывать.');
   sl.addEventListener('change', updateLocationInfo); updateLocationInfo();
+  if (typeof restoreGroundbait === 'function') restoreGroundbait(sl.value, $('username').textContent);
+  updateChumUI();
   initLocations();
   initWorld();
   initGuide();
   initLeaderboard();
   initMultiplayer();
   if (!tutDone) setTut(0);
+  lastWallTime = Date.now();
+  setInterval(() => { if (document.hidden || $('fishing-view').hidden) syncRealTime(); }, 250);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) syncRealTime(); });
   requestAnimationFrame(loop);
 }
 
@@ -209,7 +214,7 @@ if ($('bchum')) $('bchum').onclick = async e => {
     const r = await post('/api/chum', {location: sl.value});
     if (!r.ok) { say(r.error || 'Не удалось прикормить место.'); updateChumUI(); return; }
     groundbaitQty = r.groundbait_qty !== undefined ? r.groundbait_qty : Math.max(0, groundbaitQty - 1);
-    if (typeof activateGroundbait === 'function') activateGroundbait(sl.value, r.duration || groundbaitDuration);
+    if (typeof activateGroundbait === 'function') activateGroundbait(sl.value, r.duration || groundbaitDuration, undefined, $('username').textContent);
     if (typeof floatDip === 'function') floatDip();
     say('Прикормка в воде! Забрасывайте в тёплые круги для бонуса к клёву и трофеям.');
     updateChumUI();
@@ -619,13 +624,82 @@ function draw() {
     if(S==='reel') {bar(24,30,220,t,'Натяжение лески',t>breakAt()-.15?'#ff5a4d':'#5fd08a',tackleLevel===null?.2:tackleZones[tackleLevel-1]);bar(280,30,220,1-Math.min(1,d),'Рыба приближается','#58b4f0');}
   }
 }
-let accumulator = 0;
+let accumulator = 0, lastWallTime = Date.now(), wasPaused = false;
+function advanceRealTime(elapsed) {
+  if (!(elapsed > 0)) return;
+  tt += elapsed;
+  dockWet = Math.max(0, Math.min(1, dockWet + (currentWeather() === 'rain' ? elapsed / 25 : -elapsed / 45)));
+  if (typeof updateHotspots === 'function') updateHotspots(elapsed, sl.value, tt);
+  if (!castPending) {
+    let rem = elapsed;
+    if (S === 'fly') {
+      const need = Math.max(0, (1 - cast) * .8);
+      if (rem < need) {
+        cast += rem / .8;
+        rem = 0;
+      } else {
+        cast = 1;
+        rem -= need;
+        S = 'wait';
+        castBonus = typeof checkHotspotHit === 'function' ? checkHotspotHit(bx) : null;
+        pick();
+        say(!fish
+          ? 'Тишина… возможно, эта наживка здесь не подходит.'
+          : (castBonus ? `${castBonus.label}! Клёв быстрее, возможен крупный улов…` : 'Ждём поклёвку…'));
+        label();
+      }
+    }
+    if (rem > 0 && S === 'wait' && fish) {
+      tm -= rem;
+      if (tm <= 0) {
+        const over = -tm;
+        S = 'bite'; tm = 2; say('Поклёвка!');
+        if (tm > over) {
+          if (typeof floatDip === 'function') floatDip();
+          if (bellsOwned && typeof bellChime === 'function') bellChime();
+        }
+        label();
+        tm -= over;
+        if (tm <= 0) end('Поклёвка пропущена — рыба ушла.', 1);
+      }
+    } else if (rem > 0 && S === 'bite') {
+      tm -= rem;
+      if (tm <= 0) end('Поклёвка пропущена — рыба ушла.', 1);
+    } else if (rem > 0 && S === 'out') {
+      outT += rem / .9;
+      if (outT >= 1) { end(outMsg); if (tut === 4) setTut(5); }
+    } else if (rem > 0 && S === 'reel') {
+      let left = Math.min(rem, 15);
+      while (left > 0 && S === 'reel') {
+        const step = Math.min(left, 1 / 15);
+        update(step);
+        left -= step;
+      }
+    }
+  }
+  updateChumUI();
+}
+function syncRealTime() {
+  const now = Date.now(), gap = Math.max(0, (now - lastWallTime) / 1000);
+  if (gap < 0.2) return;
+  lastWallTime = now;
+  advanceRealTime(gap);
+}
 function loop(ts) {
-  updateAmbience(!$('fishing-view').hidden && !document.hidden);
-  reelSound(S === 'reel' && hold === 1 && !$('fishing-view').hidden && !document.hidden);
-  if ($('fishing-view').hidden) { last = ts; accumulator = 0; requestAnimationFrame(loop); return; }
-  accumulator += Math.min(.1, (ts - last) / 1000 || 0); last = ts;
-  while(accumulator >= 1/60) {update(1/60);accumulator -= 1/60;}
+  const paused = $('fishing-view').hidden || document.hidden;
+  updateAmbience(!paused);
+  reelSound(S === 'reel' && hold === 1 && !paused);
+  if (paused) { wasPaused = true; syncRealTime(); last = ts; accumulator = 0; requestAnimationFrame(loop); return; }
+  const now = Date.now(), gap = Math.max(0, (now - lastWallTime) / 1000);
+  lastWallTime = now;
+  if (wasPaused || gap > 0.15) {
+    wasPaused = false;
+    if (gap > 0) advanceRealTime(gap);
+    last = ts; accumulator = 0;
+  } else {
+    accumulator += Math.min(.1, (ts - last) / 1000 || 0); last = ts;
+    while(accumulator >= 1/60) {update(1/60);accumulator -= 1/60;}
+  }
   draw(); requestAnimationFrame(loop);
 }
 // Первый boot() вызывает auth.js: он проверяет сессию (GET /api/state)

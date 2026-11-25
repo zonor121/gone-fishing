@@ -49,8 +49,19 @@ function makeContext(locCode = 'lake') {
   return ctx;
 }
 
+let clock = 1000000;
+const storage = new Map();
+const localStorage = {
+  getItem: k => (storage.has(k) ? storage.get(k) : null),
+  setItem: (k, v) => storage.set(k, String(v)),
+  removeItem: k => storage.delete(k)
+};
+
 const context = vm.createContext({
   makeContext,
+  Date: {now: () => clock},
+  setClock(v) { clock = v; },
+  localStorage,
   currentLoc: 'lake',
   waterPoint(distance) {
     const z = Math.max(0, distance), depth = 1 / (1 + z * .006);
@@ -223,3 +234,46 @@ class HotspotClientTests(unittest.TestCase):
         self.assertLessEqual(res['hudMaxY'], 80)
         self.assertAlmostEqual(res['panelCenter'], 400, places=2)
         self.assertTrue(any('В ПРИКОРМКЕ' in t for t in res['hudTexts']))
+
+    def test_groundbait_and_hotspots_advance_with_wall_clock_and_persist(self):
+        res = self.probe("""(() => {
+          setClock(1000000);
+          resetHotspots('lake');
+          const idBefore = hotspotState.spots[0].id;
+          const ageBefore = hotspotState.spots[0].age;
+          activateGroundbait('lake', 180, 140, 'angler');
+
+          // Уход на 25 с: естественная точка стареет и прикормка тикает без dt.
+          setClock(1025000);
+          updateHotspots(0, 'lake', 0);
+          const age25 = hotspotState.spots[0].age;
+          const ttl25 = hotspotState.baited ? hotspotState.baited.ttl : null;
+
+          // Ещё 65 с (итого 90 с): первая точка успевает сменить место, прикормка на половине.
+          setClock(1090000);
+          updateHotspots(0, 'lake', 0);
+          const relocated = hotspotState.spots[0].id !== idBefore;
+          const ttlHalf = hotspotState.baited ? hotspotState.baited.ttl : null;
+
+          // Имитируем перезагрузку страницы ещё через 30 с (итого 120 с прошло).
+          hotspotState.baited = null;
+          setClock(1120000);
+          const restored = restoreGroundbait('lake', 'angler');
+          const ttlRestored = hotspotState.baited ? hotspotState.baited.ttl : null;
+
+          // После истечения 180 с прикормка пропадает и очищает localStorage.
+          setClock(1200000);
+          updateHotspots(0, 'lake', 0);
+          const expiredAfterWall = hotspotState.baited === null;
+          const persistedAfterExpiry = restoreGroundbait('lake', 'angler');
+
+          return {ageBefore, age25, ttl25, relocated, ttlHalf, restored, ttlRestored, expiredAfterWall, persistedAfterExpiry};
+        })()""")
+        self.assertAlmostEqual(res['age25'] - res['ageBefore'], 25, delta=0.1)
+        self.assertAlmostEqual(res['ttl25'], 155, delta=0.1)
+        self.assertTrue(res['relocated'])
+        self.assertAlmostEqual(res['ttlHalf'], 90, delta=0.1)
+        self.assertTrue(res['restored'])
+        self.assertAlmostEqual(res['ttlRestored'], 60, delta=0.1)
+        self.assertTrue(res['expiredAfterWall'])
+        self.assertFalse(res['persistedAfterExpiry'])

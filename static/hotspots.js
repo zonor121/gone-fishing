@@ -16,8 +16,30 @@ const hotspotState = {
   spots: [],
   baited: null,
   particles: [],
-  nextId: 1
+  nextId: 1,
+  userKey: ''
 };
+
+const _hsNow = () => Date.now();
+const _hsStorageKey = userKey => 'tb_groundbait_' + (userKey || 'default');
+function _saveBaitedState(userKey) {
+  if (typeof localStorage === 'undefined' || !hotspotState.baited) return;
+  try {
+    const b = hotspotState.baited;
+    localStorage.setItem(_hsStorageKey(userKey !== undefined ? userKey : hotspotState.userKey), JSON.stringify({
+      loc: b.loc,
+      dist: b.dist,
+      expiresAt: b.expiresAt,
+      maxTtl: b.maxTtl
+    }));
+  } catch (e) {}
+}
+function _clearBaitedState(userKey) {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.removeItem(_hsStorageKey(userKey !== undefined ? userKey : hotspotState.userKey));
+  } catch (e) {}
+}
 
 const _hsRnd = (a, b) => a + Math.random() * (b - a);
 const _hsClamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -44,6 +66,7 @@ function _makeNaturalSpot(existing, initialAge = 0) {
     radius: HOTSPOT_CFG.naturalRadius,
     age: Math.min(initialAge, ttl * 0.5),
     ttl,
+    lastWall: _hsNow(),
     phase: Math.random() * Math.PI * 2,
     nextRing: _hsRnd(0.4, 1.8),
     kind: 'natural'
@@ -90,16 +113,19 @@ function resetHotspots(locCode) {
   hotspotState.particles = [];
   if (hotspotState.baited && hotspotState.baited.loc !== locCode) {
     hotspotState.baited = null;
+    _clearBaitedState();
   }
   for (let i = 0; i < HOTSPOT_CFG.naturalCount; i++) {
     hotspotState.spots.push(_makeNaturalSpot(hotspotState.spots, i * 18));
   }
 }
 
-function activateGroundbait(locCode, duration = 180, dist = HOTSPOT_CFG.baitedDefaultDist) {
+function activateGroundbait(locCode, duration = 180, dist = HOTSPOT_CFG.baitedDefaultDist, userKey) {
+  if (userKey !== undefined) hotspotState.userKey = userKey || '';
   if (hotspotState.loc !== locCode) resetHotspots(locCode);
   const d = _hsClamp(Math.round(dist), 60, 220);
   const dur = Math.max(10, Number(duration) || 180);
+  const now = _hsNow();
   hotspotState.baited = {
     id: hotspotState.nextId++,
     loc: locCode,
@@ -107,15 +133,55 @@ function activateGroundbait(locCode, duration = 180, dist = HOTSPOT_CFG.baitedDe
     radius: HOTSPOT_CFG.baitedRadius,
     ttl: dur,
     maxTtl: dur,
+    expiresAt: now + dur * 1000,
+    lastWall: now,
     age: 0,
     phase: Math.random() * Math.PI * 2,
     nextRing: 0.25,
     kind: 'baited'
   };
+  _saveBaitedState();
   if (typeof waterPoint === 'function') {
     const pt = waterPoint(d);
     if (typeof spawnSplash === 'function') spawnSplash(pt[0], pt[1], pt[2], 1.35);
     for (let i = 0; i < 18; i++) _spawnHotspotParticle(pt[0], pt[1], pt[2], 'crumb');
+  }
+}
+
+function restoreGroundbait(locCode, userKey) {
+  if (userKey !== undefined) hotspotState.userKey = userKey || '';
+  if (typeof localStorage === 'undefined' || !locCode) return false;
+  try {
+    const raw = localStorage.getItem(_hsStorageKey(hotspotState.userKey));
+    if (!raw) return false;
+    const saved = JSON.parse(raw);
+    if (!saved || !saved.expiresAt) { _clearBaitedState(); return false; }
+    const now = _hsNow();
+    const rem = (saved.expiresAt - now) / 1000;
+    if (rem <= 0) {
+      hotspotState.baited = null;
+      _clearBaitedState();
+      return false;
+    }
+    if (saved.loc !== locCode) return false;
+    const maxTtl = Math.max(rem, Number(saved.maxTtl) || rem);
+    hotspotState.baited = {
+      id: hotspotState.nextId++,
+      loc: saved.loc,
+      dist: _hsClamp(Math.round(saved.dist || HOTSPOT_CFG.baitedDefaultDist), 60, 220),
+      radius: HOTSPOT_CFG.baitedRadius,
+      ttl: rem,
+      maxTtl,
+      expiresAt: saved.expiresAt,
+      lastWall: now,
+      age: Math.max(0, maxTtl - rem),
+      phase: Math.random() * Math.PI * 2,
+      nextRing: 0.25,
+      kind: 'baited'
+    };
+    return true;
+  } catch (e) {
+    return false;
   }
 }
 
@@ -124,13 +190,18 @@ function updateHotspots(dt, locCode, time) {
   if (hotspotState.loc !== locCode || hotspotState.spots.length === 0) {
     resetHotspots(locCode);
   }
-  if (!(dt > 0)) return;
+  const now = _hsNow();
+  const baseDt = dt > 0 ? dt : 0;
 
   const hasWP = typeof waterPoint === 'function';
   for (let i = 0; i < hotspotState.spots.length; i++) {
     const s = hotspotState.spots[i];
-    s.age += dt;
-    s.nextRing -= dt;
+    const wallDt = s.lastWall ? Math.max(0, (now - s.lastWall) / 1000) : 0;
+    s.lastWall = now;
+    const step = Math.max(baseDt, wallDt);
+    if (!(step > 0)) continue;
+    s.age += step;
+    s.nextRing -= step;
     if (s.age >= s.ttl) {
       const others = hotspotState.spots.filter((_, idx) => idx !== i);
       hotspotState.spots[i] = _makeNaturalSpot(others, 0);
@@ -147,29 +218,37 @@ function updateHotspots(dt, locCode, time) {
 
   const b = hotspotState.baited;
   if (b) {
-    b.age += dt;
-    b.ttl -= dt;
-    b.nextRing -= dt;
-    if (b.ttl <= 0) {
-      hotspotState.baited = null;
-    } else if (b.nextRing <= 0) {
-      b.nextRing = _hsRnd(0.85, 1.7);
-      if (hasWP) {
-        const pt = waterPoint(b.dist);
-        _spawnHotspotParticle(pt[0], pt[1], pt[2], Math.random() < 0.55 ? 'bubble' : 'crumb');
+    const wallDt = b.lastWall ? Math.max(0, (now - b.lastWall) / 1000) : 0;
+    b.lastWall = now;
+    const step = Math.max(baseDt, wallDt);
+    if (step > 0) {
+      b.age += step;
+      b.ttl -= step;
+      b.nextRing -= step;
+      if (b.ttl <= 0) {
+        hotspotState.baited = null;
+        _clearBaitedState();
+      } else if (b.nextRing <= 0) {
+        b.nextRing = _hsRnd(0.85, 1.7);
+        if (hasWP) {
+          const pt = waterPoint(b.dist);
+          _spawnHotspotParticle(pt[0], pt[1], pt[2], Math.random() < 0.55 ? 'bubble' : 'crumb');
+        }
       }
     }
   }
 
-  for (let i = hotspotState.particles.length - 1; i >= 0; i--) {
-    const p = hotspotState.particles[i];
-    p.life += dt;
-    if (p.life >= p.maxLife) {
-      hotspotState.particles.splice(i, 1);
-      continue;
+  if (baseDt > 0) {
+    for (let i = hotspotState.particles.length - 1; i >= 0; i--) {
+      const p = hotspotState.particles[i];
+      p.life += baseDt;
+      if (p.life >= p.maxLife) {
+        hotspotState.particles.splice(i, 1);
+        continue;
+      }
+      p.x += p.vx * baseDt;
+      p.y += p.vy * baseDt;
     }
-    p.x += p.vx * dt;
-    p.y += p.vy * dt;
   }
 }
 
