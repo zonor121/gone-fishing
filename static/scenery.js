@@ -1310,6 +1310,7 @@ function drawFirstPersonRod(tx, ty, time) {
     _drawFinger(g, ckx - 18, cky + 11, ckx - 8, cky + 14, ckx + 1, cky + 11, 7.2, 5.4, lSkin, D, true);
   }
 
+  const [bmx, bmy] = at(.90), [btx, bty] = tan(.90), bml = Math.hypot(btx, bty) || 1;
   ROD_RIG = {
     tip: [tx, ty],
     blankBase: [bx0, by0],
@@ -1321,7 +1322,8 @@ function drawFirstPersonRod(tx, ty, time) {
     widths: [baseW, tipW],
     bow,
     breath: [brx, bry],
-    leftHand
+    leftHand,
+    bellMount: { pos: [bmx, bmy], tan: [btx / bml, bty / bml], up: [ux, uy], width: width(.90) }
   };
   g.restore();
 }

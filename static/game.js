@@ -559,6 +559,7 @@ function draw() {
   }
   else if(S==='reel'||S==='res') {const p=waterPoint(bx*Math.max(0,d));px=p[0]+Math.sin(time*6)*(sd>0?10:2);py=p[1];scale=p[2];}
   if(px!==null){
+    const isSpin = sb.value === 'spin';
     if(typeof drawWaterFX!=='function') {
       g.strokeStyle='rgba(217,235,217,.35)';g.lineWidth=1;
       for(let i=0;i<(S==='fly'?0:2);i++){const r=6+((time*9+i*12)%24);g.beginPath();g.ellipse(px,py+5,r*scale,r*scale*.22,0,0,7);g.stroke();}
@@ -567,13 +568,15 @@ function draw() {
       drawFightWaterFX(g,px,py,scale,fish,w,d,sd,fatigue,time,P,{sea:l.code==='sea'});
     }
     if(S==='fly'||S==='wait'||S==='bite') {
-      if(typeof drawRealisticFloat==='function') {
+      if(isSpin && typeof drawSpinLure==='function') {
+        drawSpinLure(g,px,py,scale,S,time,P,{castProgress:cast,waterY:target[1],bitePhase:tt*30,sea:l.code==='sea'});
+      } else if(typeof drawRealisticFloat==='function') {
         drawRealisticFloat(g,px,py,scale,S,time,P,{castProgress:cast,waterY:target[1],bitePhase:tt*30,sea:l.code==='sea'});
       } else {
         g.save();g.translate(px,py);g.scale(scale,scale);g.strokeStyle='#eee5c8';g.lineWidth=1;g.beginPath();g.moveTo(0,-12);g.lineTo(0,4);g.stroke();g.fillStyle='#ef613f';g.beginPath();g.ellipse(0,-5,3,6,0,0,7);g.fill();g.fillStyle='#f0e8cd';g.fillRect(-2,-2,4,4);g.restore();
       }
     }
-    const linePy = S==='bite'&&typeof drawRealisticFloat==='function' ? py+(3.5+Math.sin(tt*30)*2.2)*scale*.4 : py;
+    const linePy = !isSpin&&S==='bite'&&typeof drawRealisticFloat==='function' ? py+(3.5+Math.sin(tt*30)*2.2)*scale*.4 : py;
     if(typeof drawFishingLine==='function') {
       drawFishingLine(g,tx,ty,px,linePy,S,t,breakAt(),sd,time,P);
     } else {
@@ -584,7 +587,8 @@ function draw() {
       for(let i=0;i<3;i++){const a=-Math.PI/2+(i-1)*.55,r=(9+sd*12)*scale;
         g.beginPath();g.moveTo(px+Math.cos(a)*r*.35,py+Math.sin(a)*r*.35);g.lineTo(px+Math.cos(a)*r,py+Math.sin(a)*r);g.stroke();}}
   } else if(S!=='out'){
-    if(typeof drawFishingLine==='function') drawFishingLine(g,tx,ty,null,0,S,0,1,0,time,P);
+    if(typeof drawHangingRig==='function') drawHangingRig(g,tx,ty,S,sb.value,pw,time,P);
+    else if(typeof drawFishingLine==='function') drawFishingLine(g,tx,ty,null,0,S,0,1,0,time,P);
     else {g.strokeStyle='rgba(246,244,218,.8)';g.lineWidth=.8;g.beginPath();g.moveTo(tx,ty);g.lineTo(tx+3,ty+38);g.stroke();}
   }
   if(S==='out'){
@@ -596,6 +600,7 @@ function draw() {
   }
   if(typeof drawWaterFX==='function') drawWaterFX(g,P);
   drawFirstPersonRod(tx,ty,time);
+  if(bellsOwned&&typeof drawRodBells==='function'&&typeof ROD_RIG!=='undefined'&&ROD_RIG) drawRodBells(g,ROD_RIG,S,time,P);
   g.restore();
   // Оттенок времени суток и эффекты погоды поверх сцены (см. world.js).
   dayTint(g); drawWeatherEffects(g, time);
