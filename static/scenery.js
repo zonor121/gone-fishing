@@ -17,6 +17,14 @@ function shape(c, points, color) {
 
 // Палитры освещения: пейзаж запекается под время суток, а не тонируется сверху.
 const PALETTES = {
+  dawn: {
+    sky: ['#2b3d68', '#836f91', '#e8a888'], sun: [445, 178, 13, '#ffb38a'], halo: '255,178,136',
+    ridges: ['#5f697d', '#4c5769', '#38464c', '#293836'], trees: ['#586476', '#465460', '#334444', '#243532'],
+    bank: '#444c3d', water: ['#8f858d', '#5c6670', '#344c4a', '#1b2d2b'],
+    seaWater: ['#8d848d', '#576473', '#2e4a59', '#142a37'],
+    cloud: ['#d9b2a4', '#655c72'], haze: '#cfa396',
+    sparkle: '255,196,154', waveLight: '#c9b2ae', waveDark: '#172226', mist: .22
+  },
   morning: {
     sky: ['#7f97b0', '#c8b39e', '#efd7a6'], sun: [505, 148, 13, '#ffe9b0'], halo: '255,225,160',
     ridges: ['#b0b6ab', '#909d89', '#6a7f64', '#495f45'], trees: ['#a3b09e', '#879882', '#61795d', '#445b43'],
@@ -24,6 +32,14 @@ const PALETTES = {
     seaWater: ['#b0aca0', '#7d8f8a', '#4a6a70', '#20404c'],
     cloud: ['#f6e8d2', '#bfa88e'], haze: '#e8d9b8',
     sparkle: '255,228,160', waveLight: '#e8dcc0', waveDark: '#2c3a2e', mist: .13
+  },
+  forenoon: {
+    sky: ['#769ab5', '#bdd1ce', '#ebe5c6'], sun: [540, 96, 11, '#fff2cb'], halo: '255,238,188',
+    ridges: ['#acb9b2', '#8c9e90', '#687f69', '#485f48'], trees: ['#9fad9f', '#849883', '#60795f', '#435b43'],
+    bank: '#6e7255', water: ['#a9b6ab', '#7d9486', '#42685a', '#264138'],
+    seaWater: ['#9ea9a6', '#6f8c8f', '#3f6973', '#1c404f'],
+    cloud: ['#f3f0e0', '#bcc1af'], haze: '#e4e1c9',
+    sparkle: '255,234,176', waveLight: '#d5e0d0', waveDark: '#1c3027', mist: .04
   },
   day: {
     sky: ['#7196ad', '#b4c8ca', '#e3e2ce'], sun: [572, 57, 9, '#fff6da'], halo: '255,246,213',
@@ -33,6 +49,14 @@ const PALETTES = {
     cloud: ['#eef0e2', '#b9c0ae'], haze: '#dfe3d2',
     sparkle: '255,237,188', waveLight: '#caddd3', waveDark: '#112822', mist: 0
   },
+  golden: {
+    sky: ['#65829e', '#cbb292', '#f2cf92'], sun: [592, 118, 12, '#ffe5a3'], halo: '255,214,136',
+    ridges: ['#9c9d96', '#7d8378', '#5a6a58', '#3c4f3e'], trees: ['#919787', '#767f6c', '#53644e', '#384b3a'],
+    bank: '#65644b', water: ['#b8ab92', '#7e8673', '#3e5d52', '#213a34'],
+    seaWater: ['#b2a592', '#6c8287', '#355c6d', '#163448'],
+    cloud: ['#f5debc', '#a69484'], haze: '#e6ca9c',
+    sparkle: '255,218,148', waveLight: '#dfd1b2', waveDark: '#172822', mist: .03
+  },
   evening: {
     sky: ['#565a80', '#c07a5c', '#f2b263'], sun: [600, 163, 14, '#ffd28a'], halo: '255,190,110',
     ridges: ['#8d8078', '#6f6a60', '#4d5648', '#33443a'], trees: ['#84796e', '#665f55', '#454f42', '#2e3d34'],
@@ -40,6 +64,14 @@ const PALETTES = {
     seaWater: ['#c9a27a', '#6f7d80', '#33556a', '#142c40'],
     cloud: ['#f2c9a0', '#8a6a68'], haze: '#e8b888',
     sparkle: '255,200,130', waveLight: '#e8c9a0', waveDark: '#1c2822', mist: .06
+  },
+  dusk: {
+    sky: ['#1e2a54', '#5e466e', '#cf6e58'], sun: [604, 184, 13, '#ffb078'], halo: '235,126,102',
+    ridges: ['#4f4c64', '#3f4052', '#2d3540', '#1f2830'], trees: ['#47465c', '#383b4c', '#28303b', '#1b242a'],
+    bank: '#363834', water: ['#7e646e', '#4c4e5c', '#293a42', '#132127'],
+    seaWater: ['#7a626e', '#454f61', '#22384a', '#0e1d2a'],
+    cloud: ['#ba7f82', '#47425c'], haze: '#9e6e78',
+    sparkle: '238,176,148', waveLight: '#a69ab0', waveDark: '#0d171c', mist: .06
   },
   night: {
     sky: ['#0d1626', '#1a2740', '#2c3a52'], sun: [600, 58, 8, '#e9edf4'], halo: '200,220,245',
@@ -50,11 +82,63 @@ const PALETTES = {
     sparkle: '205,225,245', waveLight: '#7f95ad', waveDark: '#050d14', mist: .05
   }
 };
+const PHASE_CYCLE = { dawn: 675, morning: 45, forenoon: 135, day: 225, golden: 315, evening: 405, dusk: 495, night: 585 };
+const SUN_ARC = [
+  [645, 425, 198, 13, '#ff9d78', '255,152,116', 0],
+  [675, 445, 178, 13, '#ffb38a', '255,178,136', .85],
+  [720, 505, 148, 13, '#ffe9b0', '255,225,160', 1],
+  [810, 505, 148, 13, '#ffe9b0', '255,225,160', 1],
+  [855, 540, 96, 11, '#fff2cb', '255,238,188', 1],
+  [900, 572, 57, 9, '#fff6da', '255,246,213', 1],
+  [990, 572, 57, 9, '#fff6da', '255,246,213', 1],
+  [1035, 592, 118, 12, '#ffe5a3', '255,214,136', 1],
+  [1080, 600, 163, 14, '#ffd28a', '255,190,110', 1],
+  [1170, 600, 163, 14, '#ffd28a', '255,190,110', 1],
+  [1215, 604, 184, 13, '#ffb078', '235,126,102', .72],
+  [1245, 608, 200, 13, '#e88266', '220,105,90', 0]
+];
+const MOON_ARC = [
+  [470, 645, 165, 8, '#dce5f2', '190,212,240', 0],
+  [495, 628, 122, 8, '#e3ebf6', '198,218,244', .55],
+  [540, 600, 58, 8, '#e9edf4', '200,220,245', 1],
+  [630, 600, 58, 8, '#e9edf4', '200,220,245', 1],
+  [675, 570, 116, 8, '#dce5f2', '195,216,242', .45],
+  [705, 552, 165, 8, '#d4deec', '185,205,235', 0]
+];
+function _sampleArc(keys, t) {
+  if (t <= keys[0][0] || t >= keys[keys.length - 1][0]) return null;
+  for (let i = 0; i < keys.length - 1; i++) {
+    const a = keys[i], b = keys[i + 1];
+    if (t >= a[0] && t <= b[0]) {
+      const p = (t - a[0]) / Math.max(1e-6, b[0] - a[0]);
+      const u = p * p * (3 - 2 * p);
+      return {
+        x: a[1] + (b[1] - a[1]) * u,
+        y: a[2] + (b[2] - a[2]) * u,
+        r: a[3] + (b[3] - a[3]) * u,
+        col: mix(a[4], b[4], u),
+        halo: rgbOf(mix(`rgb(${a[5]})`, `rgb(${b[5]})`, u)).join(','),
+        alpha: a[6] + (b[6] - a[6]) * u
+      };
+    }
+  }
+  return null;
+}
+function computeCelestial(cycle, tint) {
+  const c = ((cycle % 720) + 720) % 720;
+  const sunRaw = _sampleArc(SUN_ARC, c < 630 ? c + 720 : c);
+  const moonRaw = _sampleArc(MOON_ARC, c);
+  return {
+    sun: sunRaw ? { ...sunRaw, col: tint(sunRaw.col) } : null,
+    moon: moonRaw ? { ...moonRaw, col: tint(moonRaw.col) } : null
+  };
+}
 function getPalette(phase) {
-  const blend = phase ? {part: phase, next: phase, amount: 0}
+  const blend = phase ? {part: phase, next: phase, amount: 0, cycle: PHASE_CYCLE[phase] || 225}
     : typeof currentDayBlend === 'function' ? currentDayBlend()
-    : {part: typeof currentDayPart === 'function' ? currentDayPart() : 'day', amount: 0};
+    : {part: typeof currentDayPart === 'function' ? currentDayPart() : 'day', amount: 0, cycle: 225};
   const {part, amount} = blend, next = blend.next || part;
+  const cycle = blend.cycle !== undefined ? blend.cycle : (PHASE_CYCLE[part] || 225);
   const wx = typeof currentWeather === 'function' ? currentWeather() : 'clear';
   const p = PALETTES[part], q = PALETTES[next];
   const wash = wx === 'rain' ? ['#5c6a70', .38] : wx === 'fog' ? ['#b7c0ba', .34] : wx === 'wind' ? ['#8a9590', .08] : null;
@@ -62,19 +146,31 @@ function getPalette(phase) {
   const color = (a, b) => amount ? mix(tint(a), tint(b), amount) : tint(a);
   const colors = key => p[key].map((c, i) => color(c, q[key][i]));
   const scalar = (a, b) => a * (1 - amount) + b * amount;
-  const night = scalar(part === 'night' ? 1 : 0, next === 'night' ? 1 : 0);
-  const dim = phase => phase === 'night' ? .5 : phase === 'evening' ? .15 : 0;
-  const foregroundDim = phase => phase === 'night' ? .45 : phase === 'evening' ? .12 : 0;
-  return {part, next, amount, wx, night,
+  const nightMap = { dawn: .45, morning: 0, forenoon: 0, day: 0, golden: 0, evening: 0, dusk: .5, night: 1 };
+  const envMap = { dawn: .25, morning: 0, forenoon: 0, day: 0, golden: .06, evening: .15, dusk: .325, night: .5 };
+  const fgMap = { dawn: .225, morning: 0, forenoon: 0, day: 0, golden: .05, evening: .12, dusk: .285, night: .45 };
+  const starMap = { dawn: .28, dusk: .42, night: 1 };
+  const glowMap = { dawn: .9, morning: 1, golden: .65, evening: 1, dusk: .85 };
+  const night = scalar(nightMap[part] || 0, nightMap[next] || 0);
+  const starAlpha = scalar(starMap[part] || 0, starMap[next] || 0);
+  const horizonGlow = scalar(glowMap[part] || 0, glowMap[next] || 0);
+  const celestial = computeCelestial(cycle, tint);
+  const dominant = celestial.sun && (!celestial.moon || celestial.sun.alpha >= celestial.moon.alpha)
+    ? celestial.sun : (celestial.moon || celestial.sun);
+  const sunTuple = dominant
+    ? [dominant.x, dominant.y, dominant.r, dominant.col]
+    : [...p.sun.slice(0, 3).map((v, i) => scalar(v, q.sun[i])), mix(p.sun[3], q.sun[3], amount)];
+  return {part, next, amount, cycle, wx, night, starAlpha, horizonGlow, celestial,
     sky: colors('sky'), ridges: colors('ridges'), trees: colors('trees'), bank: color(p.bank, q.bank),
     water: colors('water'), seaWater: colors('seaWater'), cloud: colors('cloud'), haze: color(p.haze, q.haze),
-    sun: [...p.sun.slice(0, 3).map((v, i) => scalar(v, q.sun[i])), mix(p.sun[3], q.sun[3], amount)],
+    sun: sunTuple,
     halo: rgbOf(mix(p.halo, q.halo, amount)).join(','),
     sparkle: rgbOf(mix(p.sparkle, q.sparkle, amount)).join(','),
     waveLight: color(p.waveLight, q.waveLight), waveDark: color(p.waveDark, q.waveDark),
-    environmentDim: scalar(dim(part), dim(next)), foregroundDim: scalar(foregroundDim(part), foregroundDim(next)),
+    environmentDim: scalar(envMap[part] || 0, envMap[next] || 0),
+    foregroundDim: scalar(fgMap[part] || 0, fgMap[next] || 0),
     celestialAlpha: wx === 'rain' || wx === 'fog' ? .12 : 1,
-    stars: night > 0 && (wx === 'clear' || wx === 'wind'),
+    stars: starAlpha > .05 && (wx === 'clear' || wx === 'wind'),
     lit: wx !== 'rain' && wx !== 'fog',
     mist: wx === 'fog' ? .3 : scalar(p.mist, q.mist)};
 }
@@ -159,10 +255,10 @@ function paintSky(c, horizon, treeLine, P = getPalette()) {
   sky.addColorStop(.82, mix(P.sky[1], P.sky[2], .55));
   sky.addColorStop(1, P.sky[2]);
   c.fillStyle = sky; c.fillRect(0, 0, 800, horizon + 1);
-  // На лесных локациях светило поднимается над кромкой деревьев, иначе закат не виден.
-  const [sx, sy0, sr, scol] = P.sun, sy = sy0 - (treeLine ? 45 : 0);
-  if (P.part === 'morning' || P.part === 'evening') {
-    const glowA = P.wx === 'clear' || P.wx === 'wind' ? .28 : .10;
+  // Атмосферная заревая подсветка у горизонта для рассвета, утра, предзаката, заката и сумерек.
+  const sx = P.sun[0], hg = P.horizonGlow !== undefined ? P.horizonGlow : (P.part === 'morning' || P.part === 'evening' ? 1 : 0);
+  if (hg > .02) {
+    const glowA = (P.wx === 'clear' || P.wx === 'wind' ? .28 : .10) * hg;
     const hGlow = c.createRadialGradient(sx, horizon, 6, sx, horizon, 260);
     hGlow.addColorStop(0, `rgba(${P.halo},${glowA})`);
     hGlow.addColorStop(.5, `rgba(${P.halo},${glowA * .35})`);
@@ -170,12 +266,13 @@ function paintSky(c, horizon, treeLine, P = getPalette()) {
     c.fillStyle = hGlow; c.fillRect(0, Math.max(0, horizon - 180), 800, 180);
   }
   if (P.stars) {
+    const sa = P.starAlpha !== undefined ? P.starAlpha : 1;
     // Мягкая диагональная полоса Млечного Пути.
     for (let i = 0; i < 20; i++) {
       const u = i / 19, mx = 110 + u * 440, my = horizon * .76 - u * horizon * .68;
       const mr = 24 + noise(i + 470) * 26;
       const mg = c.createRadialGradient(mx, my, 1, mx, my, mr);
-      mg.addColorStop(0, 'rgba(186,204,236,.038)'); mg.addColorStop(1, 'rgba(186,204,236,0)');
+      mg.addColorStop(0, `rgba(186,204,236,${(.038 * sa).toFixed(4)})`); mg.addColorStop(1, 'rgba(186,204,236,0)');
       c.fillStyle = mg; c.beginPath(); c.arc(mx, my, mr, 0, 7); c.fill();
     }
     const starTints = ['235,241,252', '255,238,210', '202,222,255'];
@@ -185,7 +282,7 @@ function paintSky(c, horizon, treeLine, P = getPalette()) {
       const x = onBand ? 110 + u * 440 + (noise(i + 441) - .5) * 75 : noise(i + 400) * 800;
       const y = onBand ? horizon * .76 - u * horizon * .68 + (noise(i + 442) - .5) * 42 : noise(i + 410) * horizon * .84;
       const big = noise(i + 420) > .92;
-      const a = .18 + noise(i + 430) * (onBand ? .45 : .65);
+      const a = (.18 + noise(i + 430) * (onBand ? .45 : .65)) * sa;
       const tint = starTints[i % 3];
       c.fillStyle = `rgba(${tint},${a})`;
       c.beginPath(); c.arc(x, y, big ? 1.1 : .55 + noise(i + 435) * .35, 0, 7); c.fill();
@@ -195,21 +292,6 @@ function paintSky(c, horizon, treeLine, P = getPalette()) {
       }
     }
   }
-  c.save(); c.globalAlpha = P.celestialAlpha;
-  const halo = c.createRadialGradient(sx, sy, 2, sx, sy, P.part === 'night' ? 105 : 145);
-  halo.addColorStop(0, `rgba(${P.halo},.82)`); halo.addColorStop(.22, `rgba(${P.halo},.28)`); halo.addColorStop(1, `rgba(${P.halo},0)`);
-  c.fillStyle = halo; c.fillRect(sx - 150, sy - 150, 300, 300);
-  c.fillStyle = scol; c.beginPath(); c.arc(sx, sy, sr, 0, 7); c.fill();
-  if (P.part === 'night') {
-    c.fillStyle = 'rgba(155,174,198,.42)';
-    c.beginPath(); c.arc(sx - 2.8, sy - 1.8, 1.7, 0, 7); c.fill();
-    c.beginPath(); c.arc(sx + 2.1, sy + 2.5, 1.3, 0, 7); c.fill();
-    c.beginPath(); c.arc(sx + 2.8, sy - 2.7, .9, 0, 7); c.fill();
-    c.beginPath(); c.arc(sx - 1.2, sy + 3.1, 1.0, 0, 7); c.fill();
-    c.strokeStyle = 'rgba(245,248,255,.45)'; c.lineWidth = .6;
-    c.beginPath(); c.arc(sx, sy, sr, -.9, 1.1); c.stroke();
-  }
-  c.restore();
   // Тонкие высотные перистые облака в кэше (объёмные кучевые плывут отдельно в drawDynamicSky).
   const ca = P.part === 'night' ? .38 : .85;
   c.save(); c.lineCap = 'round';
@@ -536,13 +618,53 @@ function drawLandscape(l, P) {
     g.drawImage(landscapeFrames.get(P.next), 0, 0, 800, 420); g.restore();
   }
 }
+function drawCelestial(horizon, treeLine, P) {
+  if (!P || !P.celestial) return;
+  const bodyY = b => Math.max(20, b.y - (treeLine ? 42 : 0));
+  g.save();
+  g.beginPath(); g.rect(0, 0, 800, horizon); g.clip();
+  const { sun, moon } = P.celestial;
+  if (sun && sun.alpha > .01) {
+    const sy = bodyY(sun);
+    g.save();
+    g.globalAlpha = P.celestialAlpha * sun.alpha;
+    const halo = g.createRadialGradient(sun.x, sy, 2, sun.x, sy, 145);
+    halo.addColorStop(0, `rgba(${sun.halo},.82)`);
+    halo.addColorStop(.22, `rgba(${sun.halo},.28)`);
+    halo.addColorStop(1, `rgba(${sun.halo},0)`);
+    g.fillStyle = halo; g.fillRect(sun.x - 150, sy - 150, 300, 300);
+    g.fillStyle = sun.col; g.beginPath(); g.arc(sun.x, sy, sun.r, 0, 7); g.fill();
+    g.restore();
+  }
+  if (moon && moon.alpha > .01) {
+    const my = bodyY(moon);
+    g.save();
+    g.globalAlpha = P.celestialAlpha * moon.alpha;
+    const halo = g.createRadialGradient(moon.x, my, 2, moon.x, my, 105);
+    halo.addColorStop(0, `rgba(${moon.halo},.78)`);
+    halo.addColorStop(.22, `rgba(${moon.halo},.24)`);
+    halo.addColorStop(1, `rgba(${moon.halo},0)`);
+    g.fillStyle = halo; g.fillRect(moon.x - 115, my - 115, 230, 230);
+    g.fillStyle = moon.col; g.beginPath(); g.arc(moon.x, my, moon.r, 0, 7); g.fill();
+    g.fillStyle = 'rgba(155,174,198,.42)';
+    g.beginPath(); g.arc(moon.x - 2.8, my - 1.8, 1.7, 0, 7); g.fill();
+    g.beginPath(); g.arc(moon.x + 2.1, my + 2.5, 1.3, 0, 7); g.fill();
+    g.beginPath(); g.arc(moon.x + 2.8, my - 2.7, .9, 0, 7); g.fill();
+    g.beginPath(); g.arc(moon.x - 1.2, my + 3.1, 1.0, 0, 7); g.fill();
+    g.strokeStyle = 'rgba(245,248,255,.45)'; g.lineWidth = .6;
+    g.beginPath(); g.arc(moon.x, my, moon.r, -.9, 1.1); g.stroke();
+    g.restore();
+  }
+  g.restore();
+}
 function drawDynamicSky(time, horizon, P, sea = false) {
   const speed = P.wx === 'wind' ? 8.5 : P.wx === 'rain' ? 5.0 : 2.2;
-  const cloudA = (P.part === 'night' ? .36 : 1) * (P.wx === 'fog' ? .22 : P.wx === 'rain' ? .75 : 1);
+  const cloudA = (1 - P.night * .64) * (P.wx === 'fog' ? .22 : P.wx === 'rain' ? .75 : 1);
   const darkCol = P.wx === 'rain' ? mix(P.cloud[1], '#424c50', .45) : P.cloud[1];
   const litCol = P.wx === 'rain' ? mix(P.cloud[0], '#647074', .4) : P.cloud[0];
   const sunX = P.sun[0];
-  const warmEdge = (P.part === 'morning' || P.part === 'evening') && P.lit ? `rgba(${P.halo},${.26 * cloudA})` : null;
+  const hg = P.horizonGlow !== undefined ? P.horizonGlow : (P.part === 'morning' || P.part === 'evening' ? 1 : 0);
+  const warmEdge = hg > .05 && P.lit ? `rgba(${P.halo},${.26 * cloudA * hg})` : null;
   const puffOffsets = [[-.52, .05, .52], [-.24, -.24, .68], [.08, -.32, .74], [.36, -.16, .60], [.58, .06, .46]];
 
   g.save();
@@ -583,9 +705,10 @@ function drawAtmosphere(l, time, P) {
   const horizon = sea ? 183 : 190;
   g.save();
   if (P.stars) {
+    const sa = P.starAlpha !== undefined ? P.starAlpha : 1;
     for (let i = 0; i < 14; i++) {
       const x = noise(i + 480) * 780 + 10, y = noise(i + 485) * horizon * .78;
-      const pulse = .25 + .65 * (.5 + .5 * Math.sin(time * 2.3 + i * 1.7));
+      const pulse = (.25 + .65 * (.5 + .5 * Math.sin(time * 2.3 + i * 1.7))) * sa;
       g.fillStyle = `rgba(240,246,255,${pulse})`;
       g.beginPath(); g.arc(x, y, .9 + (i % 2) * .3, 0, 7); g.fill();
       if (pulse > .75) {
@@ -615,7 +738,7 @@ function drawAtmosphere(l, time, P) {
       g.beginPath(); g.arc(x, y, .85, 0, 7); g.fill();
     }
   }
-  if (!sea && (P.night > .2 || P.part === 'evening') && P.wx !== 'rain' && P.wx !== 'wind') {
+  if (!sea && (P.night > .2 || P.part === 'evening' || P.part === 'dusk' || P.part === 'dawn') && P.wx !== 'rain' && P.wx !== 'wind') {
     const ffBase = P.night > .2 ? Math.min(1, P.night * 1.3) : .45;
     for (let i = 0; i < 8; i++) {
       const rightSide = l && l.code === 'pond' && i >= 5;
@@ -638,6 +761,7 @@ function drawAtmosphere(l, time, P) {
 function drawEnvironment(l, time) {
   const P=getPalette();
   drawLandscape(l,P);
+  drawCelestial(190,true,P);
   drawDynamicSky(time,190,P,false);
   drawWaterSurface(time,false,l.current);
   const wind=typeof currentWeather==='function'&&currentWeather()==='wind'?2.5:1;

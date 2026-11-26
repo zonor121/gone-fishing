@@ -88,25 +88,26 @@ class DaylightTests(unittest.TestCase):
             with self.subTest(part=part):
                 self.assertEqual(self.probe(f"at('{part}', 89); sky()[0]"), color)
 
-    def test_last_ninety_seconds_blend_sunset_into_night(self):
+    def test_last_ninety_seconds_pass_through_dedicated_dusk_phase(self):
         result = self.probe("at('evening', 135); sky()[0]")
-        self.assertEqual(result, [50, 56, 83])
+        self.assertEqual(result, [30, 42, 84])
 
     def test_transition_eases_in_and_out(self):
         result = self.probe("""[90, 112.5, 135, 157.5, 179.999].map(seconds => {
           at('evening', seconds); return sky()[0];
         })""")
-        self.assertEqual(result, [[86, 90, 128], [75, 79, 114], [50, 56, 83],
-                                  [24, 33, 52], [13, 22, 38]])
+        self.assertEqual(result, [[86, 90, 128], [58, 66, 106], [30, 42, 84],
+                                  [22, 32, 61], [13, 22, 38]])
 
     def test_all_phase_boundaries_are_visually_continuous(self):
         for part in ('morning', 'day', 'evening', 'night'):
-            with self.subTest(part=part):
-                result = self.probe(f"""(() => {{
-                  at('{part}', 179.999); const before = sky();
-                  setClock(1000002); return {{before, after: sky()}};
-                }})()""")
-                self.assertEqual(result['before'], result['after'])
+            for sec in (89.999, 134.999, 179.999):
+                with self.subTest(part=part, sec=sec):
+                    result = self.probe(f"""(() => {{
+                      at('{part}', {sec}); const before = sky();
+                      setClock(1000002); return {{before, after: sky()}};
+                    }})()""")
+                    self.assertEqual(result['before'], result['after'])
 
     def test_foreground_lighting_reaches_exact_endpoint_at_phase_boundary(self):
         for part in ('morning', 'day', 'evening', 'night'):
@@ -124,7 +125,7 @@ class DaylightTests(unittest.TestCase):
           at('evening', 135); setClock(1000000 + 720000 * 3 + 180000);
           return sky()[0];
         })()""")
-        self.assertEqual(result, [70, 87, 107])
+        self.assertEqual(result, [43, 61, 104])
 
     def test_resynchronizing_world_does_not_restart_a_transition(self):
         result = self.probe("""(() => {
@@ -133,16 +134,45 @@ class DaylightTests(unittest.TestCase):
             weather: 'clear', weather_left: 120}});
           return {before, after: sky()};
         })()""")
-        self.assertEqual(result, {'before': [[50, 56, 83], [109, 81, 78], [143, 118, 91]],
-                                  'after': [[50, 56, 83], [109, 81, 78], [143, 118, 91]]})
+        self.assertEqual(result, {'before': [[30, 42, 84], [94, 70, 110], [207, 110, 88]],
+                                  'after': [[30, 42, 84], [94, 70, 110], [207, 110, 88]]})
 
     def test_visual_transition_does_not_change_fish_activity(self):
         result = self.probe("""(() => {
           at('evening', 135); const f = {times: ['night'], weather: null};
+          const visual = currentVisualPhase(), serverPart = currentDayPart();
           const before = fishActive(f); setClock(1046000);
-          return {before, after: fishActive(f)};
+          return {visual, serverPart, before, after: fishActive(f)};
         })()""")
-        self.assertEqual(result, {'before': False, 'after': True})
+        self.assertEqual(result, {'visual': 'dusk', 'serverPart': 'evening', 'before': False, 'after': True})
+
+    def test_all_eight_visual_phases_have_distinct_palettes_and_moving_celestial_arc(self):
+        result = self.probe("""(() => {
+          const points = [
+            ['night', 135], ['morning', 45], ['morning', 135], ['day', 45],
+            ['day', 135], ['evening', 45], ['evening', 135], ['night', 45]
+          ];
+          return points.map(([p, s]) => {
+            at(p, s);
+            const P = getPalette();
+            return {
+              phase: currentVisualPhase(),
+              label: VISUAL_PHASE_NAMES[currentVisualPhase()],
+              sky0: rgbOf(P.sky[0]),
+              sunX: P.celestial.sun ? P.celestial.sun.x : null,
+              sunA: P.celestial.sun ? P.celestial.sun.alpha : 0,
+              moonA: P.celestial.moon ? P.celestial.moon.alpha : 0
+            };
+          });
+        })()""")
+        phases = [r['phase'] for r in result]
+        self.assertEqual(phases, ['dawn', 'morning', 'forenoon', 'day', 'golden', 'evening', 'dusk', 'night'])
+        self.assertEqual(len({tuple(r['sky0']) for r in result}), 8)
+        sun_xs = [r['sunX'] for r in result[:7]]
+        self.assertTrue(all(a <= b for a, b in zip(sun_xs, sun_xs[1:])), sun_xs)
+        self.assertGreater(result[6]['moonA'], .4)   # луна восходит в сумерках
+        self.assertEqual(result[7]['moonA'], 1)       # полная яркость ночью
+        self.assertGreater(result[0]['sunA'], .7)     # солнце появляется на рассвете
 
     def test_unsynchronized_scene_defaults_to_day(self):
         self.assertEqual(self.probe('sky()[0]'), [113, 150, 173])
@@ -155,7 +185,7 @@ class DaylightTests(unittest.TestCase):
         for code in ('lake', 'river', 'pond', 'sea'):
             with self.subTest(code=code):
                 result = self.probe(f"""(() => {{
-                  at('evening', 135); sl.value = '{code}';
+                  at('evening', 112.5); sl.value = '{code}';
                   if (sl.value === 'sea') drawSea(0);
                   else drawEnvironment({{code: sl.value, current: sl.value === 'river'}}, 0);
                   return drawing.images.map(image => image.alpha);
@@ -164,7 +194,7 @@ class DaylightTests(unittest.TestCase):
 
     def test_background_frames_are_reused_until_location_or_weather_changes(self):
         result = self.probe("""(() => {
-          at('evening', 135); const l = {code: 'lake'}; drawEnvironment(l, 0);
+          at('evening', 105); const l = {code: 'lake'}; drawEnvironment(l, 0);
           const original = drawing.images.map(image => image.source);
           resetDrawing(); setClock(1015000); drawEnvironment(l, 0);
           const later = drawing.images.map(image => image.source);
@@ -177,7 +207,7 @@ class DaylightTests(unittest.TestCase):
 
     def test_finishing_transition_reuses_the_destination_background(self):
         result = self.probe("""(() => {
-          at('evening', 135); const l = {code: 'lake'}; drawEnvironment(l, 0);
+          at('evening', 157.5); const l = {code: 'lake'}; drawEnvironment(l, 0);
           const destination = drawing.images.at(-1).source;
           resetDrawing(); setClock(1046000); drawEnvironment(l, 0);
           return {destination, sources: drawing.images.map(image => image.source)};
@@ -186,7 +216,7 @@ class DaylightTests(unittest.TestCase):
 
     def test_dock_crossfade_preserves_transparent_edges_and_cached_frames(self):
         result = self.probe("""(() => {
-          at('evening', 135); drawFirstPersonDock();
+          at('evening', 112.5); drawFirstPersonDock();
           const layers = imageLayers(drawing.images[0]);
           const original = layers.map(image => image.source);
           const alphas = layers.map(image => image.alpha);
@@ -207,14 +237,14 @@ class DaylightTests(unittest.TestCase):
 
     def test_foreground_tint_interpolates_color_and_opacity(self):
         result = self.probe("at('evening', 135); dayTint(g); drawing.fills[0].color")
-        self.assertEqual(result, 'rgba(75,51,48,0.15)')
+        self.assertEqual(result, 'rgba(56,42,88,0.14)')
 
     def test_night_float_glow_fades_in_and_out(self):
-        for part in ('evening', 'night'):
+        for part, alpha in (('evening', '0.25'), ('night', '0.225')):
             with self.subTest(part=part):
                 result = self.probe(f"""at('{part}', 135); S = 'wait'; drawWeatherEffects(g, 0);
                   drawing.gradients.flatMap(gradient => gradient.stops).filter(stop =>
-                    stop[1] === 'rgba(255,214,120,0.25)').length""")
+                    stop[1] === 'rgba(255,214,120,{alpha})').length""")
                 self.assertEqual(result, 1)
 
     def test_rain_and_fog_colors_are_continuous_at_dawn_and_nightfall(self):

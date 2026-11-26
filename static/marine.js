@@ -42,6 +42,7 @@ function paintSea(c, P = getPalette()) {
 function drawSea(time) {
   const P=getPalette();
   drawLandscape({code:'sea'},P);
+  if(typeof drawCelestial==='function') drawCelestial(183,false,P);
   if(typeof drawDynamicSky==='function') drawDynamicSky(time,183,P,true);
   drawWaterSurface(time,true);
   if(typeof drawAtmosphere==='function') drawAtmosphere({code:'sea'},time,P);

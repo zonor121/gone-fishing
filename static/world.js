@@ -4,6 +4,11 @@ let WORLD = null, QUESTS = [], ACHS = [], DIARY = null;
 let DAY_PARTS = ['morning', 'day', 'evening', 'night'];
 let WEATHER_NAMES = { clear: 'Ясно', rain: 'Дождь', fog: 'Туман', wind: 'Ветер' };
 let DAY_PART_NAMES = { morning: 'Утро', day: 'День', evening: 'Вечер', night: 'Ночь' };
+const TRANSITION_PARTS = { morning: 'forenoon', day: 'golden', evening: 'dusk', night: 'dawn' };
+const VISUAL_PHASE_NAMES = {
+  dawn: 'Рассвет', morning: 'Утро', forenoon: 'Позднее утро', day: 'День',
+  golden: 'Предзакат', evening: 'Закат', dusk: 'Сумерки', night: 'Ночь'
+};
 let RAIN_BITE_MULT = .75;               // в дождь общая вероятность поклёвки ниже
 let worldSyncAt = 0;                    // Date.now() последнего обновления мира
 
@@ -22,15 +27,22 @@ function currentDayPart() {
   return DAY_PARTS[(DAY_PARTS.indexOf(WORLD.day_part) + shift) % 4];
 }
 function currentDayBlend() {
-  if (!WORLD) return {part: 'day', next: 'day', amount: 0};
+  if (!WORLD) return {part: 'day', next: 'day', amount: 0, cycle: 225};
   const elapsed = (Date.now() - worldSyncAt) / 1000;
   const position = DAY_PARTS.indexOf(WORLD.day_part) * 180 + 180 - WORLD.day_part_left + elapsed;
   const cycle = ((position % 720) + 720) % 720;
   const index = Math.floor(cycle / 180);
-  const progress = Math.max(0, (cycle % 180 - 90) / 90);
-  // Микрошаги ниже точности цвета не должны менять округление на границе фаз.
-  const amount = Math.round(progress * progress * (3 - 2 * progress) * 1e6) / 1e6;
-  return {part: DAY_PARTS[index], next: DAY_PARTS[(index + 1) % 4], amount};
+  const offset = cycle % 180;
+  const base = DAY_PARTS[index], nextBase = DAY_PARTS[(index + 1) % 4], mid = TRANSITION_PARTS[base];
+  const smooth = p => Math.round(p * p * (3 - 2 * p) * 1e6) / 1e6;
+  if (offset < 90) return {part: base, next: base, amount: 0, cycle};
+  if (offset < 135) return {part: base, next: mid, amount: smooth((offset - 90) / 45), cycle};
+  return {part: mid, next: nextBase, amount: smooth((offset - 135) / 45), cycle};
+}
+function currentVisualPhase() {
+  if (!WORLD) return 'day';
+  const b = currentDayBlend();
+  return b.amount >= .5 ? b.next : b.part;
 }
 function currentWeather() { return WORLD ? WORLD.weather : 'clear'; }
 
@@ -69,10 +81,11 @@ function toast(title, text) {
 // ---------- чип погоды/времени ----------
 function updateWorldChip() {
   if (!WORLD) return;
-  $('world-time').textContent = DAY_PART_NAMES[currentDayPart()] || currentDayPart();
+  const vPhase = currentVisualPhase();
+  $('world-time').textContent = VISUAL_PHASE_NAMES[vPhase] || DAY_PART_NAMES[currentDayPart()] || vPhase;
   $('world-weather').textContent = WEATHER_NAMES[WORLD.weather] || WORLD.weather;
   const w = $('world-chip');
-  w.className = `world-chip wx-${WORLD.weather} tp-${currentDayPart()}`;
+  w.className = `world-chip wx-${WORLD.weather} tp-${vPhase}`;
 }
 
 // ---------- вкладки ----------
@@ -136,6 +149,7 @@ function initWorld() {
   };
   // Погода и задания живут на сервере: подтягиваем их в фоне, пока игрок на рыбалке.
   setInterval(() => { if (S === 'idle' && !document.hidden && $('fishing-view') && !$('fishing-view').hidden) refresh().catch(() => {}); }, 30000);
+  setInterval(() => { if (WORLD && !document.hidden) updateWorldChip(); }, 2000);
 }
 function currentViewName() {
   return Object.keys(VIEW_IDS).find(k => !$(VIEW_IDS[k]).hidden) || 'fishing';
@@ -144,7 +158,16 @@ function currentViewName() {
 // ---------- эффекты погоды и времени суток на сцене ----------
 function dayTint(g2) {
   const {part, next, amount} = currentDayBlend();
-  const tints = {morning: [255,220,150,.05], day: [0,0,0,0], evening: [255,140,60,.08], night: [10,18,44,.22]};
+  const tints = {
+    dawn: [175,112,135,.09],
+    morning: [255,220,150,.05],
+    forenoon: [255,244,210,.02],
+    day: [0,0,0,0],
+    golden: [255,188,96,.05],
+    evening: [255,140,60,.08],
+    dusk: [56,42,88,.14],
+    night: [10,18,44,.22]
+  };
   const a = tints[part], b = tints[next], alpha = a[3] * (1 - amount) + b[3] * amount;
   if (alpha > 0) {
     const rgb = a.slice(0, 3).map((v, i) => Math.round((v * a[3] * (1 - amount) + b[i] * b[3] * amount) / alpha));
