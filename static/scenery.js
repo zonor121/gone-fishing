@@ -950,160 +950,55 @@ const ROD_DIR = [(470 - _rodBaseX) / _rodAxisLen, (118 - _rodBaseY) / _rodAxisLe
 const ROD_NORM = [ROD_DIR[1], -ROD_DIR[0]]; // Влево-вниз от бланка: сторона воды, колец и катушки.
 const SLEEVE_LIGHT = '#718064';
 
-// Анатомичный палец: пластичный контур с утолщением сустава, мировое освещение, SSS и мягкий ноготь.
-function _drawFinger(g, x0, y0, cx, cy, x1, y1, w0, w1, skinGrad, D, nail, opts = {}) {
+// Свободный мягкий отворот рукава поверх голого запястья/предплечья (без жёсткой резинки).
+function _drawRolledCuffBand(g, x0, y0, cx, cy, x1, y1, thick, D) {
   const dx = x1 - x0, dy = y1 - y0, l = Math.hypot(dx, dy) || 1;
-  const ux = dx / l, uy = dy / l, nx = -uy, ny = ux;
-  // Направление на верхне-левый источник света, согласованное для любой ориентации пальца.
-  const lightSign = (nx * -0.45 + ny * -0.89) >= 0 ? 1 : -1;
-  const lx = nx * lightSign, ly = ny * lightSign;
-  const wm = (w0 + w1) * .52;
-  const pad = w1 * .50;
-  const trace = () => {
-    g.beginPath();
-    g.moveTo(x0 + nx * w0 * .5, y0 + ny * w0 * .5);
-    g.quadraticCurveTo(cx + nx * wm * .53, cy + ny * wm * .53, x1 + nx * pad, y1 + ny * pad);
-    // Против часовой стрелки: дуга идёт ВПЕРЁД через кончик (ux, uy), формируя мягкую подушечку.
-    g.arc(x1, y1, pad, Math.atan2(ny, nx), Math.atan2(-ny, -nx), true);
-    g.quadraticCurveTo(cx - nx * wm * .51, cy - ny * wm * .51, x0 - nx * w0 * .5, y0 - ny * w0 * .5);
-    g.closePath();
-  };
+  const kx = dy / l, ky = -dx / l; // нормаль в сторону кожи
+  const tx = dx / l, ty = dy / l;
+  const h = thick * .5;
 
-  // Базовая заливка + объёмная светотень и тёплый SSS строго внутри контура пальца.
+  // Мягкая падающая тень от свободного края отворота на кожу.
   g.save();
-  trace();
-  g.fillStyle = skinGrad;
-  g.fill();
-  g.clip();
-
-  // Цилиндрический поперечный объём: светлая верхняя сторона -> тёплый румянец -> тень снизу.
-  const cyl = g.createLinearGradient(cx + lx * wm * .65, cy + ly * wm * .65, cx - lx * wm * .65, cy - ly * wm * .65);
-  cyl.addColorStop(0, rgba(D('#fff0e0'), .24));
-  cyl.addColorStop(.40, rgba(D('#ffe8d2'), 0));
-  cyl.addColorStop(.74, rgba(D('#c85a3e'), .20));
-  cyl.addColorStop(1, rgba(D('#4a2416'), .40));
-  g.fillStyle = cyl;
-  const bx = Math.min(x0, cx, x1) - Math.max(w0, w1) * 1.6;
-  const by = Math.min(y0, cy, y1) - Math.max(w0, w1) * 1.6;
-  const bw = Math.max(x0, cx, x1) - Math.min(x0, cx, x1) + Math.max(w0, w1) * 3.2;
-  const bh = Math.max(y0, cy, y1) - Math.min(y0, cy, y1) + Math.max(w0, w1) * 3.2;
-  g.fillRect(bx, by, bw, bh);
-
-  // Мягкий розоватый румянец подушечки кончика пальца.
-  const tipFlush = g.createRadialGradient(x1, y1, .5, x1, y1, w1 * .95);
-  tipFlush.addColorStop(0, rgba(D('#cc6146'), .22));
-  tipFlush.addColorStop(1, rgba(D('#cc6146'), 0));
-  g.fillStyle = tipFlush;
-  g.beginPath(); g.arc(x1, y1, w1 * .95, 0, 7); g.fill();
-
-  // Тонкий небесный рефлекс вдоль освещённой стороны.
-  g.strokeStyle = rgba(D('#eaf2f6'), .16); g.lineWidth = .85;
+  g.lineCap = 'round';
+  g.strokeStyle = 'rgba(16,12,10,.22)';
+  g.lineWidth = 4.5;
   g.beginPath();
-  g.moveTo(x0 + lx * w0 * .32, y0 + ly * w0 * .32);
-  g.quadraticCurveTo(cx + lx * wm * .34, cy + ly * wm * .34, x1 + lx * pad * .60, y1 + ly * pad * .60);
+  g.moveTo(x0 + kx * (h + 1.2) + tx * 2, y0 + ky * (h + 1.2) + ty * 2);
+  g.quadraticCurveTo(cx + kx * (h + 1.2), cy + ky * (h + 1.2), x1 + kx * (h + 1.2) - tx * 2, y1 + ky * (h + 1.2) - ty * 2);
   g.stroke();
 
-  // Деликатные складки межфалангового сустава (отключаемы для поджатых пальцев в тени).
-  if (!opts.noCrease) {
-    g.strokeStyle = rgba(D('#7a4830'), .26); g.lineWidth = .6;
-    for (const s of [-1.0, .9]) {
-      const jx = cx + ux * s, jy = cy + uy * s;
-      g.beginPath();
-      g.moveTo(jx - lx * wm * .20, jy - ly * wm * .20);
-      g.quadraticCurveTo(jx + ux * .45, jy + uy * .45, jx + lx * wm * .24, jy + ly * wm * .24);
-      g.stroke();
-    }
-  }
-  g.restore();
-
-  // Мягкая теневая граница только по нижней/теневой стороне.
-  if (!opts.noOutline) {
-    g.strokeStyle = rgba(D('#4f2c1b'), opts.blendBase ? .24 : .34); g.lineWidth = .7;
-    g.beginPath();
-    const sx0 = opts.blendBase ? x0 + (cx - x0) * .35 : x0;
-    const sy0 = opts.blendBase ? y0 + (cy - y0) * .35 : y0;
-    g.moveTo(sx0 - lx * w0 * .48, sy0 - ly * w0 * .48);
-    g.quadraticCurveTo(cx - lx * wm * .50, cy - ly * wm * .50, x1 - lx * pad * .88, y1 - ly * pad * .88);
-    g.stroke();
-  }
-
-  if (nail) {
-    const ang = Math.atan2(y1 - cy, x1 - cx);
-    const sideShift = opts.nailSide || 0;
-    const nlx = x1 - ux * w1 * .16 + lx * w1 * sideShift;
-    const nly = y1 - uy * w1 * .16 + ly * w1 * sideShift;
-    const nrx = w1 * .30, nry = w1 * (opts.nailNarrow ? .17 : .22);
-    // Естественная розовато-телесная ногтевая пластина в ракурсе.
-    const nGrad = g.createLinearGradient(nlx - ux * nrx, nly - uy * nrx, nlx + ux * nrx, nly + uy * nrx);
-    nGrad.addColorStop(0, D('#d8a78c'));
-    nGrad.addColorStop(.55, D('#ebc9b2'));
-    nGrad.addColorStop(1, D('#f2dfd0'));
-    g.fillStyle = nGrad;
-    g.beginPath(); g.ellipse(nlx, nly, nrx, nry, ang, 0, 7); g.fill();
-    // Тонкая кутикула у основания ногтя.
-    g.strokeStyle = rgba(D('#8d583e'), .34); g.lineWidth = .55;
-    g.beginPath(); g.ellipse(nlx, nly, nrx, nry, ang, Math.PI * .62, Math.PI * 1.38); g.stroke();
-    // Нежный блик на пластине (приглушается ночью через D).
-    g.fillStyle = rgba(D('#fff8f0'), .30);
-    g.beginPath(); g.ellipse(nlx + lx * .4, nly + ly * .4, nrx * .46, nry * .32, ang, 0, 7); g.fill();
-  }
-}
-
-// Цилиндрическая трикотажная манжета с тенью на запястье и мягкой резинкой.
-function _drawCuff(g, x0, y0, x1, y1, D, outX, outY) {
-  const dx = x1 - x0, dy = y1 - y0, l = Math.hypot(dx, dy) || 1;
-  let nx = -dy / l, ny = dx / l;
-  if (outX !== undefined && nx * outX + ny * outY < 0) { nx = -nx; ny = -ny; }
-  const mx = (x0 + x1) * .5, my = (y0 + y1) * .5;
-  const bow = 2.5;
-
-  // Мягкая падающая тень от края манжеты на кожу запястья.
-  g.strokeStyle = 'rgba(18,12,10,.30)'; g.lineWidth = 4.2;
-  g.beginPath();
-  g.moveTo(x0 + nx * 4.5, y0 + ny * 4.5);
-  g.quadraticCurveTo(mx + nx * (4.5 + bow), my + ny * (4.5 + bow), x1 + nx * 4.5, y1 + ny * 4.5);
-  g.stroke();
-
+  // Замкнутый объёмный край подвёрнутой ткани со скруглёнными концами.
   const cuffGrad = g.createLinearGradient(x0, y0, x1, y1);
-  cuffGrad.addColorStop(0, D('#2a3b32'));
-  cuffGrad.addColorStop(.28, D('#465a4c'));
-  cuffGrad.addColorStop(.68, D('#304338'));
-  cuffGrad.addColorStop(1, D('#19251f'));
+  cuffGrad.addColorStop(0, D('#86927a'));
+  cuffGrad.addColorStop(.52, D('#62715c'));
+  cuffGrad.addColorStop(1, D('#3b493c'));
 
-  g.save();
   g.beginPath();
-  g.moveTo(x0 - nx * 4.2, y0 - ny * 4.2);
-  g.quadraticCurveTo(mx - nx * (4.2 - bow * .7), my - ny * (4.2 - bow * .7), x1 - nx * 4.2, y1 - ny * 4.2);
-  g.lineTo(x1 + nx * 4.8, y1 + ny * 4.8);
-  g.quadraticCurveTo(mx + nx * (4.8 + bow), my + ny * (4.8 + bow), x0 + nx * 4.8, y0 + ny * 4.8);
+  g.moveTo(x0 + kx * h, y0 + ky * h);
+  g.quadraticCurveTo(cx + kx * h, cy + ky * h, x1 + kx * h, y1 + ky * h);
+  g.quadraticCurveTo(x1 + tx * h * .85, y1 + ty * h * .85, x1 - kx * h, y1 - ky * h);
+  g.quadraticCurveTo(cx - kx * h, cy - ky * h, x0 - kx * h, y0 - ky * h);
+  g.quadraticCurveTo(x0 - tx * h * .85, y0 - ty * h * .85, x0 + kx * h, y0 + ky * h);
   g.closePath();
   g.fillStyle = cuffGrad;
   g.fill();
+
+  // Мягкий блик по верхнему сгибу ткани и деликатная складка-шов отворота.
   g.clip();
-
-  // Вязаные вертикальные дорожки-рубчики по цилиндру запястья.
-  for (let i = 1; i <= 8; i++) {
-    const u = i / 9, px = x0 + dx * u, py = y0 + dy * u;
-    const arch = Math.sin(u * Math.PI) * bow;
-    g.strokeStyle = rgba(D('#15201a'), .42); g.lineWidth = .85;
-    g.beginPath();
-    g.moveTo(px - nx * (4.5 - arch * .65), py - ny * (4.5 - arch * .65));
-    g.lineTo(px + nx * (5.2 + arch), py + ny * (5.2 + arch));
-    g.stroke();
-    g.strokeStyle = rgba(D('#6b7e6d'), .28); g.lineWidth = .6;
-    g.beginPath();
-    g.moveTo(px + dx * .018 - nx * (4.5 - arch * .65), py + dy * .018 - ny * (4.5 - arch * .65));
-    g.lineTo(px + dx * .018 + nx * (5.2 + arch), py + dy * .018 + ny * (5.2 + arch));
-    g.stroke();
-  }
-  g.restore();
-
-  // Тонкий светлый кант по передней кромке манжеты.
-  g.strokeStyle = rgba(D('#7a8e79'), .34); g.lineWidth = .8;
+  g.strokeStyle = rgba(D('#b5c0a8'), .22);
+  g.lineWidth = 1.2;
   g.beginPath();
-  g.moveTo(x0 + nx * 4.6, y0 + ny * 4.6);
-  g.quadraticCurveTo(mx + nx * (4.6 + bow), my + ny * (4.6 + bow), x1 + nx * 4.6, y1 + ny * 4.6);
+  g.moveTo(x0 + kx * (h * .42), y0 + ky * (h * .42));
+  g.quadraticCurveTo(cx + kx * (h * .42), cy + ky * (h * .42), x1 + kx * (h * .42), y1 + ky * (h * .42));
   g.stroke();
+
+  g.strokeStyle = rgba(D('#253127'), .34);
+  g.lineWidth = 1.1;
+  g.beginPath();
+  g.moveTo(x0 - kx * (h * .28), y0 - ky * (h * .28));
+  g.quadraticCurveTo(cx - kx * (h * .28), cy - ky * (h * .28), x1 - kx * (h * .28), y1 - ky * (h * .28));
+  g.stroke();
+  g.restore();
 }
 
 // Только руки и снасть: положение камеры совпадает со взглядом рыбака.
@@ -1377,83 +1272,84 @@ function drawFirstPersonRod(tx, ty, time) {
   }
   g.lineTo(tx, ty); g.stroke();
 
-  // 8. Правый рукав, манжета и скульптурная тыльная сторона правой кисти (4 пальца скрыты за удочкой).
-  const [hx, hy] = gripAt(.67);
-  const wx0 = hx - rx * 38 + nx0 * 7.8, wy0 = hy - ry * 38 + ny0 * 7.8;   // лучевой край манжеты
-  const wx1 = hx - rx * 48 + ux * 26.8, wy1 = hy - ry * 48 + uy * 26.8;   // локтевой край манжеты
+  // 8. Правая рука (сжатый кулак с чёткими гранями + большой палец вдоль левой кромки втулки + стройное запястье + компактный рукав).
+  const [hx, hy] = gripAt(.64);
+  const P8 = (dx, dy) => [hx + dx, hy + dy];
 
-  // Мягкая тень от кисти и запястья на рукояти.
-  g.strokeStyle = 'rgba(10,14,12,.34)'; g.lineWidth = 17;
-  g.beginPath();
-  g.moveTo(gripAt(.40)[0], gripAt(.40)[1]);
-  g.lineTo(gripAt(.85)[0], gripAt(.85)[1]);
-  g.stroke();
-
-  // Правый рукав предплечья — естественный цилиндр, уходящий к нижнему правому углу кадра.
+  // Металлическая втулка катушкодержателя у выхода рукояти из кулака.
   g.save();
-  g.beginPath();
-  g.moveTo(wx0 - rx * 2, wy0 - ry * 2);
-  g.quadraticCurveTo(wx0 + 22, wy0 + 36, wx0 + 46, 460);
-  g.lineTo(wx1 + 112, 460);
-  g.quadraticCurveTo(wx1 + 66, wy1 + 36, wx1 - rx * 2, wy1 - ry * 2);
-  g.closePath();
-  g.fillStyle = sleeve;
-  g.fill();
-  g.clip();
-  // Цилиндрический объём рукава поперёк предплечья + мягкие складки ткани вдоль руки.
-  const rFold = g.createLinearGradient(wx0 + 18, wy0 + 28, wx1 + 44, wy1 + 14);
-  rFold.addColorStop(0, rgba(D('#dbe6d0'), .16));
-  rFold.addColorStop(.42, rgba(D('#718064'), 0));
-  rFold.addColorStop(1, rgba(D('#141e19'), .38));
-  g.fillStyle = rFold; g.fillRect(wx0 - 20, wy1 - 20, 220, 140);
-  g.strokeStyle = rgba(D('#90a183'), .16); g.lineWidth = 4.2;
-  g.beginPath(); g.moveTo(wx0 + ux * 10 - rx * 6, wy0 + uy * 10 - ry * 6); g.quadraticCurveTo(wx0 + 42, wy0 + 34, wx0 + 74, 456); g.stroke();
-  g.strokeStyle = rgba(D('#1a2821'), .22); g.lineWidth = 3.8;
-  g.beginPath(); g.moveTo(wx0 + ux * 17 - rx * 10, wy0 + uy * 17 - ry * 10); g.quadraticCurveTo(wx0 + 52, wy0 + 36, wx0 + 88, 456); g.stroke();
-  g.beginPath(); g.moveTo(wx1 - ux * 6 - rx * 12, wy1 - uy * 6 - ry * 12); g.quadraticCurveTo(wx1 + 44, wy1 + 30, wx1 + 82, 456); g.stroke();
+  g.lineCap = 'butt';
+  const [rs0x, rs0y] = gripAt(.68), [rs1x, rs1y] = gripAt(.75), [rs2x, rs2y] = gripAt(.81);
+  g.strokeStyle = D('#23272b'); g.lineWidth = 15.6;
+  g.beginPath(); g.moveTo(rs0x, rs0y); g.lineTo(rs1x, rs1y); g.stroke();
+  const [g8x, g8y] = gripAt(.78);
+  const silverCollar = g.createLinearGradient(g8x + gpx * 8, g8y + gpy * 8, g8x - gpx * 8, g8y - gpy * 8);
+  silverCollar.addColorStop(0, D('#98a2a6'));
+  silverCollar.addColorStop(.32, D('#edf1f3'));
+  silverCollar.addColorStop(.62, D('#b2bcc0'));
+  silverCollar.addColorStop(1, D('#5b6469'));
+  g.strokeStyle = silverCollar; g.lineWidth = 15.8;
+  g.beginPath(); g.moveTo(rs1x, rs1y); g.lineTo(rs2x, rs2y); g.stroke();
+  g.strokeStyle = 'rgba(12,16,18,.42)'; g.lineWidth = .8;
+  for (const [sx, sy] of [[rs1x, rs1y], [rs2x, rs2y]]) {
+    g.beginPath(); g.moveTo(sx - gpx * 7.8, sy - gpy * 7.8); g.lineTo(sx + gpx * 7.8, sy + gpy * 7.8); g.stroke();
+  }
   g.restore();
 
-  // Скульптурная форма тыла правой кисти: мягкий округлый объём, 4 костяшки и плавный переход в запястье.
-  const skinGrad = g.createLinearGradient(hx + nx0 * 10 + rx * 14, hy + ny0 * 10 + ry * 14, wx1 + ux * 14, wy1 + uy * 14);
-  skinGrad.addColorStop(0, D('#ecc3a2'));
-  skinGrad.addColorStop(.46, D('#daa580'));
-  skinGrad.addColorStop(.82, D('#ba805d'));
-  skinGrad.addColorStop(1, D('#8e5b40'));
+  // Мягкая контактная тень от большого пальца вдоль левой кромки втулки/пробки и затенение седловины.
+  g.save();
+  g.lineCap = 'round';
+  g.strokeStyle = 'rgba(12,10,8,.30)'; g.lineWidth = 3.4;
+  g.beginPath(); g.moveTo(...P8(-17.5, -19.8)); g.lineTo(...P8(-12.0, -12.5)); g.stroke();
+  g.restore();
+  const [shx, shy] = gripAt(.735);
+  const seatShadow = g.createRadialGradient(shx, shy, 1, shx, shy, 8.0);
+  seatShadow.addColorStop(0, 'rgba(14,10,8,.28)');
+  seatShadow.addColorStop(1, 'rgba(14,10,8,0)');
+  g.fillStyle = seatShadow;
+  g.beginPath(); g.arc(shx, shy, 8.0, 0, 7); g.fill();
 
-  // 4 анатомические костяшки (MCP): указательная выше всех, плавная дуга спада к мизинцу.
-  const k1 = [gripAt(.83)[0] + ux * 3.8, gripAt(.83)[1] + uy * 3.8];
-  const k2 = [gripAt(.79)[0] + ux * 13.4, gripAt(.79)[1] + uy * 13.4];
-  const k3 = [gripAt(.72)[0] + ux * 21.8, gripAt(.72)[1] + uy * 21.8];
-  const k4 = [gripAt(.63)[0] + ux * 27.6, gripAt(.63)[1] + uy * 27.6];
-  // Мягко скруглённые вершины проксимальных фаланг (без «зубчатого» края).
-  const f1 = [k1[0] + rx * 3.8 + ux * 1.4, k1[1] + ry * 3.8 + uy * 1.4];
-  const f2 = [k2[0] + rx * 3.5 + ux * 1.6, k2[1] + ry * 3.5 + uy * 1.6];
-  const f3 = [k3[0] + rx * 3.0 + ux * 1.5, k3[1] + ry * 3.0 + uy * 1.5];
-  const f4 = [k4[0] + rx * 2.2 + ux * 1.4, k4[1] + ry * 2.2 + uy * 1.4];
-  const ulnarMid = [gripAt(.48)[0] + ux * 30.8, gripAt(.48)[1] + uy * 30.8];
+  // Компактное тёмное нутро свободного правого рукава позади стройного запястья.
+  g.fillStyle = D('#1d241e');
+  g.beginPath();
+  g.moveTo(...P8(5.0, 42.5));
+  g.quadraticCurveTo(...P8(21.5, 33.8), ...P8(37.5, 36.8));
+  g.quadraticCurveTo(...P8(21.5, 45.0), ...P8(5.0, 42.5));
+  g.closePath();
+  g.fill();
 
+  // Единый анатомический силуэт правой кисти + большого пальца вдоль рукояти + стройного запястья.
   const traceRightHand = () => {
     g.beginPath();
-    g.moveTo(wx0 + rx * 1.5, wy0 + ry * 1.5);
-    // Плавный лучевой край запястья и перепонка к указательной костяшке.
-    g.bezierCurveTo(
-      gripAt(.56)[0] + nx0 * 9.8, gripAt(.56)[1] + ny0 * 9.8,
-      gripAt(.73)[0] + nx0 * 7.2, gripAt(.73)[1] + ny0 * 7.2,
-      k1[0] + nx0 * 2.0, k1[1] + ny0 * 2.0
-    );
-    // Органичный округлый гребень согнутых оснований 4 пальцев.
-    g.quadraticCurveTo(f1[0], f1[1], (f1[0] + f2[0]) * .5 - rx * .4, (f1[1] + f2[1]) * .5 - ry * .4);
-    g.quadraticCurveTo(f2[0], f2[1], (f2[0] + f3[0]) * .5 - rx * .35, (f2[1] + f3[1]) * .5 - ry * .35);
-    g.quadraticCurveTo(f3[0], f3[1], (f3[0] + f4[0]) * .5 - rx * .3, (f3[1] + f4[1]) * .5 - ry * .3);
-    g.quadraticCurveTo(f4[0] + ux * 2.4, f4[1] + uy * 2.4, k4[0] + ux * 3.4 - rx * 4, k4[1] + uy * 3.4 - ry * 4);
-    // Мягкий мясистый край ладони (гипотенар) и плавный переход к запястью.
-    g.bezierCurveTo(
-      ulnarMid[0] + rx * 5, ulnarMid[1] + ry * 5,
-      ulnarMid[0] - rx * 7, ulnarMid[1] - ry * 7,
-      wx1 + rx * 1, wy1 + ry * 1
-    );
+    g.moveTo(...P8(6.8, 43.5));
+    // Левый край стройного голого запястья -> шейка запястья:
+    g.bezierCurveTo(...P8(3.2, 34.0), ...P8(-1.8, 25.8), ...P8(-4.5, 19.2));
+    // Компактное основание большого пальца (тенар):
+    g.bezierCurveTo(...P8(-11.5, 13.2), ...P8(-17.8, 5.5), ...P8(-21.2, -3.0));
+    // Плавный наружный край большого пальца к суставу IP и подушечке:
+    g.bezierCurveTo(...P8(-23.2, -8.0), ...P8(-25.0, -12.6), ...P8(-25.4, -16.8));
+    // Небольшая мягкая округлая подушечка кончика без перегиба вправо:
+    g.bezierCurveTo(...P8(-25.8, -20.6), ...P8(-23.0, -22.6), ...P8(-20.0, -21.0));
+    // Внутренний край пальца вдоль втулки в угол хвата:
+    g.bezierCurveTo(...P8(-18.0, -19.6), ...P8(-15.4, -15.6), ...P8(-12.2, -12.6));
+    // Согнутая основная фаланга указательного пальца плотно огибает рукоять к костяшке K1:
+    g.bezierCurveTo(...P8(-8.6, -14.8), ...P8(-6.0, -18.2), ...P8(-2.0, -18.8));
+    // Верхняя почти горизонтальная грань кулака (указательная K1 -> средняя костяшка K2):
+    g.bezierCurveTo(...P8(3.2, -19.4), ...P8(7.6, -18.2), ...P8(12.2, -18.2));
+    // Анатомический диагональный скос к безымянной (K3) и угловато-скруглённой мизинцевой костяшке (K4):
+    g.bezierCurveTo(...P8(16.2, -18.2), ...P8(19.2, -15.0), ...P8(22.5, -13.8));
+    g.bezierCurveTo(...P8(25.8, -12.6), ...P8(28.8, -9.6), ...P8(29.8, -6.2));
+    // Упругое ребро гипотенара -> ровный естественный вход стройного мужского запястья в рукав:
+    g.bezierCurveTo(...P8(31.4, -0.5), ...P8(30.4, 9.2), ...P8(28.8, 18.2));
+    g.bezierCurveTo(...P8(28.5, 24.5), ...P8(32.0, 31.8), ...P8(35.8, 38.8));
     g.closePath();
   };
+
+  const skinGrad = g.createLinearGradient(...P8(-26, -22), ...P8(34, 22));
+  skinGrad.addColorStop(0, D('#f3ccb0'));
+  skinGrad.addColorStop(.42, D('#e3ae8b'));
+  skinGrad.addColorStop(.72, D('#c68563'));
+  skinGrad.addColorStop(1, D('#8f553a'));
 
   g.save();
   traceRightHand();
@@ -1461,212 +1357,348 @@ function drawFirstPersonRod(tx, ty, time) {
   g.fill();
   g.clip();
 
-  // Тёплый подповерхностный румянец (SSS) вдоль гребня костяшек и края ладони.
-  const sss = g.createLinearGradient(k1[0] + rx * 5, k1[1] + ry * 5, hx - rx * 20, hy - ry * 20);
-  sss.addColorStop(0, rgba(D('#c85a3e'), .22));
-  sss.addColorStop(.40, rgba(D('#cf674c'), .09));
-  sss.addColorStop(1, rgba(D('#cf674c'), 0));
-  g.fillStyle = sss;
-  g.fillRect(hx - 60, hy - 65, 130, 140);
+  // Заворот верхней кромки согнутых пальцев за рукоять.
+  const wrapTop = g.createLinearGradient(...P8(10, -20), ...P8(9, -13.5));
+  wrapTop.addColorStop(0, rgba(D('#9e553b'), .22));
+  wrapTop.addColorStop(1, rgba(D('#9e553b'), 0));
+  g.fillStyle = wrapTop;
+  g.fillRect(hx - 14, hy - 22, 48, 11);
 
-  // Мягкая тень по правому локтевому ребру ладони.
-  const ulnarShade = g.createLinearGradient(hx + ux * 12, hy + uy * 12, ulnarMid[0] + ux * 10, ulnarMid[1] + uy * 10);
-  ulnarShade.addColorStop(0, rgba(D('#4a2618'), 0));
-  ulnarShade.addColorStop(1, rgba(D('#4a2618'), .32));
-  g.fillStyle = ulnarShade;
-  g.fillRect(hx - 60, hy - 65, 130, 140);
+  // Световой гребень пястья и костяшек K1..K2.
+  const rDome = g.createRadialGradient(...P8(4, -5), 2, ...P8(4, -5), 30);
+  rDome.addColorStop(0, rgba(D('#fff2e4'), .22));
+  rDome.addColorStop(1, rgba(D('#fff2e4'), 0));
+  g.fillStyle = rDome; g.beginPath(); g.arc(...P8(4, -5), 30, 0, 7); g.fill();
 
-  // Мягкий объёмный блик на куполе тыльной стороны кисти (приглушается ночью через D).
-  const domeX = hx + ux * 8 + rx * 3, domeY = hy + uy * 8 + ry * 3;
-  const dome = g.createRadialGradient(domeX, domeY, 2, domeX, domeY, 28);
-  dome.addColorStop(0, rgba(D('#fff0e0'), .24));
-  dome.addColorStop(.65, rgba(D('#ffe8d2'), .06));
-  dome.addColorStop(1, rgba(D('#ffe8d2'), 0));
-  g.fillStyle = dome;
-  g.beginPath(); g.arc(domeX, domeY, 28, 0, 7); g.fill();
+  g.strokeStyle = rgba(D('#fff4e6'), .16); g.lineWidth = 3.6;
+  g.beginPath(); g.moveTo(...P8(-2, -16.5)); g.lineTo(...P8(13, -16.0)); g.lineTo(...P8(22, -12.2)); g.stroke();
 
-  // Мягкие межкостяшечные впадины между 4 костяшками.
-  for (const [a, b] of [[k1, k2], [k2, k3], [k3, k4]]) {
-    const vx = (a[0] + b[0]) * .5 + rx * 1.4, vy = (a[1] + b[1]) * .5 + ry * 1.4;
-    const vg = g.createRadialGradient(vx, vy, .5, vx, vy, 5.2);
-    vg.addColorStop(0, rgba(D('#6e3a25'), .26));
-    vg.addColorStop(1, rgba(D('#6e3a25'), 0));
-    g.fillStyle = vg;
-    g.beginPath(); g.arc(vx, vy, 5.2, 0, 7); g.fill();
+  // Чёткий объёмный теневой план правого локтевого скоса кисти и запястья.
+  const ulnarShade = g.createLinearGradient(...P8(13, 2), ...P8(33, -2));
+  ulnarShade.addColorStop(0, rgba(D('#562a1b'), 0));
+  ulnarShade.addColorStop(.55, rgba(D('#562a1b'), .20));
+  ulnarShade.addColorStop(1, rgba(D('#421e12'), .42));
+  g.fillStyle = ulnarShade; g.fillRect(hx - 40, hy - 35, 85, 90);
+
+  // Тёплый подповерхностный румянец (SSS) на границе света и тени у костяшек и сустава IP.
+  const rSss = g.createRadialGradient(...P8(14, -12), 3, ...P8(14, -12), 22);
+  rSss.addColorStop(0, rgba(D('#cf6449'), .15));
+  rSss.addColorStop(1, rgba(D('#cf6449'), 0));
+  g.fillStyle = rSss; g.beginPath(); g.arc(...P8(14, -12), 22, 0, 7); g.fill();
+
+  const ipSss = g.createRadialGradient(...P8(-21.5, -12.5), 1, ...P8(-21.5, -12.5), 5.5);
+  ipSss.addColorStop(0, rgba(D('#cf6449'), .14));
+  ipSss.addColorStop(1, rgba(D('#cf6449'), 0));
+  g.fillStyle = ipSss; g.beginPath(); g.arc(...P8(-21.5, -12.5), 5.5, 0, 7); g.fill();
+
+  // Румянец подушечки кончика большого пальца.
+  const thumbTipSss = g.createRadialGradient(...P8(-22.8, -20.2), .5, ...P8(-22.8, -20.2), 3.6);
+  thumbTipSss.addColorStop(0, rgba(D('#cf6449'), .12));
+  thumbTipSss.addColorStop(1, rgba(D('#cf6449'), 0));
+  g.fillStyle = thumbTipSss; g.beginPath(); g.arc(...P8(-22.8, -20.2), 3.6, 0, 7); g.fill();
+
+  // Мягкое объёмное отделение большого пальца без резкой нарисованной полосы вглубь ладони.
+  const webShade = g.createRadialGradient(...P8(-10.5, -7.5), 1, ...P8(-10.5, -7.5), 11);
+  webShade.addColorStop(0, rgba(D('#6b3623'), .24));
+  webShade.addColorStop(1, rgba(D('#6b3623'), 0));
+  g.fillStyle = webShade; g.beginPath(); g.arc(...P8(-10.5, -7.5), 11, 0, 7); g.fill();
+
+  g.strokeStyle = rgba(D('#683422'), .22); g.lineWidth = .85;
+  g.beginPath(); g.moveTo(...P8(-12.2, -12.6)); g.quadraticCurveTo(...P8(-13.2, -9.2), ...P8(-12.4, -6.5)); g.stroke();
+
+  g.strokeStyle = rgba(D('#fff3e6'), .16); g.lineWidth = 2.4;
+  g.beginPath(); g.moveTo(...P8(-22.2, -18.0)); g.quadraticCurveTo(...P8(-19.5, -8.5), ...P8(-13.8, 3.0)); g.stroke();
+
+  g.strokeStyle = rgba(D('#7d442e'), .18); g.lineWidth = 2.0;
+  g.beginPath(); g.moveTo(...P8(-24.8, -16)); g.lineTo(...P8(-21.6, -5)); g.lineTo(...P8(-5.5, 19.5)); g.stroke();
+
+  g.strokeStyle = rgba(D('#824a33'), .18); g.lineWidth = .5;
+  g.beginPath(); g.moveTo(...P8(-24.2, -11.4)); g.quadraticCurveTo(...P8(-22.0, -12.8), ...P8(-19.6, -13.6)); g.stroke();
+  g.strokeStyle = rgba(D('#824a33'), .11); g.lineWidth = .5;
+  g.beginPath(); g.moveTo(...P8(-24.2, -9.8)); g.quadraticCurveTo(...P8(-22.0, -11.2), ...P8(-19.6, -12.0)); g.stroke();
+
+  // Деликатный рельеф пястья и стройного голого запястья (без резких полос).
+  for (const [vx, vy] of [[5.8, -18.2], [17.5, -15.8], [26.5, -10.2]]) {
+    const vg = g.createRadialGradient(...P8(vx, vy), .5, ...P8(vx, vy), 3.8);
+    vg.addColorStop(0, rgba(D('#733c27'), .17)); vg.addColorStop(1, rgba(D('#733c27'), 0));
+    g.fillStyle = vg; g.beginPath(); g.arc(...P8(vx, vy), 3.8, 0, 7); g.fill();
   }
+  const snuffbox = g.createRadialGradient(...P8(-4.5, 15.0), 1, ...P8(-4.5, 15.0), 10);
+  snuffbox.addColorStop(0, rgba(D('#7a432d'), .14));
+  snuffbox.addColorStop(1, rgba(D('#7a432d'), 0));
+  g.fillStyle = snuffbox; g.beginPath(); g.arc(...P8(-4.5, 15.0), 10, 0, 7); g.fill();
 
-  // Едва заметные мягкие сухожилия разгибателей на тыле кисти.
-  const wristMid = [(wx0 + wx1) * .5, (wy0 + wy1) * .5];
-  for (const [idx, kn] of [k1, k2, k3].entries()) {
-    const tStart = [wristMid[0] + (idx - 1) * ux * 4.5, wristMid[1] + (idx - 1) * uy * 4.5];
-    g.strokeStyle = rgba(D('#ffeedc'), .11); g.lineWidth = 1.6;
-    g.beginPath(); g.moveTo(tStart[0], tStart[1]); g.quadraticCurveTo((tStart[0] + kn[0]) * .5 + ux * 1, (tStart[1] + kn[1]) * .5 + uy * 1, kn[0] - rx * 2, kn[1] - ry * 2); g.stroke();
-    g.strokeStyle = rgba(D('#7a4830'), .10); g.lineWidth = .9;
-    g.beginPath(); g.moveTo(tStart[0] + ux * 1.6, tStart[1] + uy * 1.6); g.quadraticCurveTo((tStart[0] + kn[0]) * .5 + ux * 2.5, (tStart[1] + kn[1]) * .5 + uy * 2.5, kn[0] + ux * 1.5 - rx * 2, kn[1] + uy * 1.5 - ry * 2); g.stroke();
-  }
+  g.strokeStyle = rgba(D('#ffeedd'), .09); g.lineWidth = 4.0;
+  g.beginPath(); g.moveTo(...P8(10, -13)); g.lineTo(...P8(11, 18)); g.stroke();
+  g.strokeStyle = rgba(D('#6e3926'), .09); g.lineWidth = 3.0;
+  g.beginPath(); g.moveTo(...P8(15, -8)); g.lineTo(...P8(16, 20)); g.stroke();
 
-  // Мягкие радиальные блики и микроскладки на 4 костяшках.
-  const kAng = Math.atan2(ry, rx);
-  for (const [i, kn] of [k1, k2, k3, k4].entries()) {
-    const kr = 4.4 - i * .3;
-    const kg = g.createRadialGradient(kn[0] - ux * .8, kn[1] - uy * .8, .4, kn[0], kn[1], kr);
-    kg.addColorStop(0, rgba(D('#fff2e2'), .24));
-    kg.addColorStop(1, rgba(D('#fff2e2'), 0));
-    g.fillStyle = kg;
-    g.beginPath(); g.arc(kn[0], kn[1], kr, 0, 7); g.fill();
-    g.strokeStyle = rgba(D('#875238'), .20); g.lineWidth = .55;
-    g.beginPath(); g.ellipse(kn[0] + rx * .5, kn[1] + ry * .5, 2.0, 1.0, kAng + Math.PI * .5, .2, Math.PI - .2); g.stroke();
-  }
+  const uBone = g.createRadialGradient(...P8(25.2, 18.2), 1, ...P8(25.2, 18.2), 6.5);
+  uBone.addColorStop(0, rgba(D('#ffeedd'), .15)); uBone.addColorStop(1, rgba(D('#ffeedd'), 0));
+  g.fillStyle = uBone; g.beginPath(); g.arc(...P8(25.2, 18.2), 6.5, 0, 7); g.fill();
 
-  // Косточка запястья (шиловидный отросток локтевой кости) и деликатный небесный рефлекс.
-  const ubX = wx1 + rx * 11 - ux * 4.5, ubY = wy1 + ry * 11 - uy * 4.5;
-  const ub = g.createRadialGradient(ubX, ubY, .5, ubX, ubY, 6.2);
-  ub.addColorStop(0, rgba(D('#ffeedc'), .16)); ub.addColorStop(1, rgba(D('#ffeedc'), 0));
-  g.fillStyle = ub; g.beginPath(); g.arc(ubX, ubY, 6.2, 0, 7); g.fill();
-
-  g.strokeStyle = rgba(D('#e0eef6'), .15); g.lineWidth = .95;
-  g.beginPath();
-  g.moveTo(k1[0] + rx * 3.0, k1[1] + ry * 3.0);
-  g.quadraticCurveTo(f2[0], f2[1], f3[0], f3[1]);
-  g.stroke();
+  // Деликатный ноготь большого пальца соосно дистальной фаланге в лёгком ракурсе слева.
+  const [nx8, ny8] = P8(-22.6, -19.5);
+  const nailGrad8 = g.createLinearGradient(nx8 + 1.1, ny8 + 1.8, nx8 - 1.1, ny8 - 1.8);
+  nailGrad8.addColorStop(0, D('#d89f85'));
+  nailGrad8.addColorStop(.72, D('#e8bfaa'));
+  nailGrad8.addColorStop(1, D('#f0d0be'));
+  g.fillStyle = nailGrad8;
+  g.beginPath(); g.ellipse(nx8, ny8, 1.60, 2.35, -.52, 0, 7); g.fill();
+  g.strokeStyle = rgba(D('#875039'), .22); g.lineWidth = .45;
+  g.beginPath(); g.ellipse(nx8, ny8, 1.60, 2.35, -.52, -.15, Math.PI + .15); g.stroke();
+  g.fillStyle = rgba(D('#fff8f0'), .18);
+  g.beginPath(); g.ellipse(nx8 - .35, ny8 - .45, .55, .95, -.52, 0, 7); g.fill();
   g.restore();
 
-  // Мягкий контур кисти без жёсткой обводки.
-  g.strokeStyle = rgba(D('#5a3422'), .22); g.lineWidth = .8;
+  g.strokeStyle = rgba(D('#5a3220'), .18); g.lineWidth = .65;
   traceRightHand(); g.stroke();
 
-  // Органично встроенный мясистый большой палец: плавный выход из тенарной перепонки вдоль левой кромки рукояти.
-  const [tb0x, tb0y] = gripAt(.58), [tbMx, tbMy] = gripAt(.74), [tb1x, tb1y] = gripAt(.88);
-  // Мягкая контактная тень строго под большим пальцем на рукояти и катушкодержателе.
-  g.strokeStyle = 'rgba(18,12,10,.26)'; g.lineWidth = 8.2;
+  // Компактный правый рукав и свободный отворот под стройное запястье (первый градиент sleeve сохранён).
+  g.save();
   g.beginPath();
-  g.moveTo(tb0x + nx0 * 3.8, tb0y + ny0 * 3.8);
-  g.quadraticCurveTo(tbMx + nx0 * 4.0, tbMy + ny0 * 4.0, tb1x + nx0 * 0.8, tb1y + ny0 * 0.8);
-  g.stroke();
-  // Плавная тенарная перепонка, бесшовно соединяющая большой палец с телом кисти.
-  g.fillStyle = skinGrad;
-  g.beginPath();
-  g.moveTo(wx0 + rx * 3, wy0 + ry * 3);
-  g.quadraticCurveTo(tb0x + nx0 * 9.8, tb0y + ny0 * 9.8, tbMx + nx0 * 6.2, tbMy + ny0 * 6.2);
-  g.quadraticCurveTo(tbMx + nx0 * 0.8, tbMy + ny0 * 0.8, k1[0] + ux * 2.0, k1[1] + uy * 2.0);
-  g.lineTo(gripAt(.64)[0] + ux * 8.0, gripAt(.64)[1] + uy * 8.0);
+  g.moveTo(...P8(5.8, 42.5));
+  g.quadraticCurveTo(hx + 20, 442, 676, 462);
+  g.lineTo(760, 462);
+  g.quadraticCurveTo(hx + 68, 430, ...P8(36.8, 36.8));
+  g.quadraticCurveTo(...P8(21.5, 34.8), ...P8(5.8, 42.5));
   g.closePath();
+  g.fillStyle = sleeve;
   g.fill();
-  _drawFinger(
-    g,
-    tb0x + nx0 * 4.6, tb0y + ny0 * 4.6,
-    tbMx + nx0 * 4.8, tbMy + ny0 * 4.8,
-    tb1x + nx0 * 1.4, tb1y + ny0 * 1.4,
-    12.6, 8.6, skinGrad, D, true, { blendBase: true, nailNarrow: true, nailSide: .08, noOutline: true }
-  );
-  // Деликатная складка в перепонке между большим и указательным пальцем.
-  g.strokeStyle = rgba(D('#6b3c26'), .16); g.lineWidth = .7;
-  g.beginPath();
-  g.moveTo(tbMx + nx0 * 0.2, tbMy + ny0 * 0.2);
-  g.quadraticCurveTo(gripAt(.79)[0] - nx0 * .2, gripAt(.79)[1] - ny0 * .2, k1[0] - ux * 1.0, k1[1] - uy * 1.0);
-  g.stroke();
+  g.clip();
+  const rCloth = g.createLinearGradient(...P8(6, 41), ...P8(42, 38));
+  rCloth.addColorStop(0, rgba(D('#dbe6d0'), .14));
+  rCloth.addColorStop(.45, rgba(D('#718064'), 0));
+  rCloth.addColorStop(1, rgba(D('#141e19'), .38));
+  g.fillStyle = rCloth; g.fillRect(hx - 15, hy + 20, 175, 140);
+  g.strokeStyle = rgba(D('#1a2821'), .20); g.lineWidth = 4.0;
+  g.beginPath(); g.moveTo(...P8(14, 41)); g.quadraticCurveTo(hx + 22, 442, 704, 462); g.stroke();
+  g.beginPath(); g.moveTo(...P8(28, 39)); g.quadraticCurveTo(hx + 42, 438, 734, 462); g.stroke();
+  g.restore();
 
-  // Манжета рисуется поверх стыка рукава и запястья с естественной тенью на коже.
-  _drawCuff(g, wx0, wy0, wx1, wy1, D, rx, ry);
+  _drawRolledCuffBand(g, ...P8(5.0, 42.5), ...P8(21.5, 34.8), ...P8(37.5, 36.8), 9.4, D);
 
-  // 9. Левая рука с рукавом, манжетой и естественным щипковым хватом кноба катушки (wait, bite, reel, res).
+  // 9. Левая рука: голое предплечье, 3 пальца в тени, тёмный просвет, щипок чёрного кноба (wait, bite, reel, res).
   const leftHand = S === 'wait' || S === 'bite' || S === 'reel' || S === 'res';
   if (leftHand) {
     const [ckx, cky] = crankPt;
-    const lwx0 = ckx - 45, lwy0 = cky + 1;
-    const lwx1 = ckx - 38, lwy1 = cky + 23;
+    const L9 = (dx, dy) => [ckx + dx, cky + dy];
 
-    // Левый рукав с естественной цилиндрической формой предплечья и складками.
-    const lSleeve = g.createLinearGradient(310, 435, ckx, cky);
+    // Тёмное нутро свободного левого рукава позади голого предплечья.
+    g.fillStyle = D('#1d241e');
+    g.beginPath();
+    g.moveTo(...L9(-90, 9));
+    g.quadraticCurveTo(...L9(-81, 18), ...L9(-80, 31));
+    g.quadraticCurveTo(...L9(-93, 21), ...L9(-90, 9));
+    g.closePath();
+    g.fill();
+
+    // 3 согнутых пальца под ладонью (мизинец -> безымянный -> средний) в глубокой тёплой тени.
+    const lShadowSkin = g.createLinearGradient(...L9(-18, 6), ...L9(-28, 19));
+    lShadowSkin.addColorStop(0, D('#a35c44'));
+    lShadowSkin.addColorStop(.55, D('#7d3e2b'));
+    lShadowSkin.addColorStop(1, D('#58281c'));
+    const tuckedFingers = [
+      [[-29, 8], [-25.5, 16.0], [-32.5, 17.5], [-35.5, 10.5], [-28.5, 14.5]],
+      [[-21, 6], [-16.8, 15.2], [-25.0, 17.2], [-28.2, 9.2], [-20.5, 13.8]],
+      [[-12.5, 4], [-7.5, 13.0], [-16.5, 15.2], [-20.5, 7.2], [-11.5, 11.8]]
+    ];
+    for (const [fIdx, [a, b, c, e, padPt]] of tuckedFingers.entries()) {
+      g.beginPath();
+      g.moveTo(...L9(a[0], a[1]));
+      g.bezierCurveTo(...L9(a[0] + 4, a[1] + 5), ...L9(b[0] + 2, b[1] - 2), ...L9(b[0], b[1]));
+      g.bezierCurveTo(...L9(b[0] - 2, b[1] + 3), ...L9(c[0] + 3, c[1] + 1), ...L9(c[0], c[1]));
+      g.bezierCurveTo(...L9(c[0] - 4, c[1] - 2), ...L9(e[0] - 1, e[1] + 4), ...L9(e[0], e[1]));
+      g.closePath();
+      g.fillStyle = lShadowSkin;
+      g.fill();
+      const padGlow = g.createRadialGradient(...L9(padPt[0], padPt[1]), .4, ...L9(padPt[0], padPt[1]), 4.2);
+      padGlow.addColorStop(0, rgba(D('#cf7b60'), .24));
+      padGlow.addColorStop(1, rgba(D('#cf7b60'), 0));
+      g.fillStyle = padGlow;
+      g.beginPath(); g.arc(...L9(padPt[0], padPt[1]), 4.2, 0, 7); g.fill();
+      if (fIdx < 2) {
+        g.strokeStyle = rgba(D('#3b1a10'), .38); g.lineWidth = .75;
+        g.beginPath();
+        g.moveTo(...L9(b[0] + 2.5, b[1] - 7.5));
+        g.quadraticCurveTo(...L9(b[0] + 1.5, b[1] - 1.5), ...L9(b[0] - 1.5, b[1] + 1.2));
+        g.stroke();
+      }
+    }
+
+    // Тёмное внутреннее «окошко» (впадина между указательным и большим пальцем).
+    const pocketGrad = g.createLinearGradient(...L9(-30, 1), ...L9(-1, 0));
+    pocketGrad.addColorStop(0, D('#542619'));
+    pocketGrad.addColorStop(1, D('#82432f'));
+    g.fillStyle = pocketGrad;
+    g.beginPath();
+    g.moveTo(...L9(-30, -2));
+    g.lineTo(...L9(-8, -7));
+    g.lineTo(...L9(-1, 0));
+    g.lineTo(...L9(-12, 5));
+    g.lineTo(...L9(-30, 4));
+    g.closePath();
+    g.fill();
+
+    // Общий мировой градиент кожи левой руки для бесшовного слияния кисти, предплечья и большого пальца.
+    const lSkin = g.createLinearGradient(...L9(-68, -14), ...L9(-8, 22));
+    lSkin.addColorStop(0, D('#f3ccb0'));
+    lSkin.addColorStop(.42, D('#e3ae8b'));
+    lSkin.addColorStop(.78, D('#c68664'));
+    lSkin.addColorStop(1, D('#965c41'));
+
+    // Единый контур: голое предплечье + запястье + тыл кисти + 2-суставной согнутый указательный палец.
+    const traceLeftDorsal = () => {
+      g.beginPath();
+      g.moveTo(...L9(-90, 10));
+      g.quadraticCurveTo(...L9(-70, 5), ...L9(-52, -2.5));
+      g.bezierCurveTo(...L9(-40, -8.5), ...L9(-31, -13.4), ...L9(-24.5, -13.2));
+      g.quadraticCurveTo(...L9(-15.5, -12.6), ...L9(-7.5, -10.6));
+      g.bezierCurveTo(...L9(-3.2, -9.4), ...L9(1.8, -5.2), ...L9(3.4, -2.0));
+      g.bezierCurveTo(...L9(4.1, -0.5), ...L9(1.2, 0.2), ...L9(-1.8, -0.8));
+      g.quadraticCurveTo(...L9(-6.5, -4.0), ...L9(-11.5, -5.8));
+      g.quadraticCurveTo(...L9(-18.5, -4.6), ...L9(-25.5, -2.2));
+      g.bezierCurveTo(...L9(-34, 4.5), ...L9(-42, 11.0), ...L9(-50, 15.5));
+      g.quadraticCurveTo(...L9(-66, 23.0), ...L9(-82, 29.5));
+      g.closePath();
+    };
+
+    g.save();
+    traceLeftDorsal();
+    g.fillStyle = lSkin;
+    g.fill();
+    g.clip();
+    // Солнечный свет сверху предплечья, пястья и указательного пальца.
+    const lSunTop = g.createLinearGradient(...L9(-55, -12), ...L9(-45, 22));
+    lSunTop.addColorStop(0, rgba(D('#fff2e4'), .22));
+    lSunTop.addColorStop(.45, rgba(D('#fff2e4'), 0));
+    lSunTop.addColorStop(1, rgba(D('#5e301f'), .28));
+    g.fillStyle = lSunTop;
+    g.fillRect(ckx - 95, cky - 20, 108, 60);
+
+    // Нежный румянец на суставах MCP и PIP указательного пальца + тончайшая складочка PIP.
+    for (const [jx, jy, jr] of [[-24.5, -12, 5.2], [-7.5, -9.5, 4.2]]) {
+      const jf = g.createRadialGradient(...L9(jx, jy), .4, ...L9(jx, jy), jr);
+      jf.addColorStop(0, rgba(D('#d1664a'), .16)); jf.addColorStop(1, rgba(D('#d1664a'), 0));
+      g.fillStyle = jf; g.beginPath(); g.arc(...L9(jx, jy), jr, 0, 7); g.fill();
+    }
+    g.strokeStyle = rgba(D('#824a33'), .20); g.lineWidth = .55;
+    g.beginPath();
+    g.moveTo(...L9(-8.5, -10.5));
+    g.quadraticCurveTo(...L9(-7.5, -8.8), ...L9(-8.0, -7.2));
+    g.stroke();
+    g.restore();
+
+    // Деликатный контур указательного пальца и верха предплечья.
+    g.strokeStyle = rgba(D('#5a3220'), .18); g.lineWidth = .65;
+    traceLeftDorsal(); g.stroke();
+
+    // Объёмный чёрный прорезиненный кноб катушки + серебристый штифт оси.
+    const knobGrad = g.createLinearGradient(...L9(-2, -4), ...L9(5, 5));
+    knobGrad.addColorStop(0, D('#384044'));
+    knobGrad.addColorStop(.55, D('#1a1f22'));
+    knobGrad.addColorStop(1, D('#101416'));
+    g.fillStyle = knobGrad;
+    g.beginPath(); g.ellipse(...L9(1.6, .6), 5.8, 3.7, -.18, 0, 7); g.fill();
+    g.strokeStyle = rgba(D('#cdd6da'), .16); g.lineWidth = .8;
+    g.beginPath(); g.ellipse(...L9(1.6, .6), 5.0, 2.9, -.18, Math.PI * 1.15, Math.PI * 1.85); g.stroke();
+    g.fillStyle = D('#cfd7d4');
+    g.beginPath(); g.arc(...L9(4.4, .8), 1.4, 0, 7); g.fill();
+    g.fillStyle = D('#2a3230');
+    g.beginPath(); g.arc(...L9(4.4, .8), .52, 0, 7); g.fill();
+
+    // Контактная тень от подушечки большого пальца на левой части чёрного кноба.
+    g.fillStyle = 'rgba(10,12,14,.32)';
+    g.beginPath(); g.arc(...L9(0, 1.8), 3.4, 0, 7); g.fill();
+
+    // Горизонтальный большой палец на переднем плане (тем же lSkin без шва).
+    const traceLeftThumb = () => {
+      g.beginPath();
+      g.moveTo(...L9(-46, 3.0));
+      g.quadraticCurveTo(...L9(-38, .8), ...L9(-30, -.8));
+      g.quadraticCurveTo(...L9(-22, -1.3), ...L9(-15, -1.2));
+      g.quadraticCurveTo(...L9(-8.5, -1.6), ...L9(-3.5, -1.4));
+      g.quadraticCurveTo(...L9(-.8, -.6), ...L9(.4, 1.4));
+      g.bezierCurveTo(...L9(1.0, 3.8), ...L9(-2.0, 5.8), ...L9(-7.5, 6.2));
+      g.bezierCurveTo(...L9(-14.5, 6.8), ...L9(-21.5, 9.8), ...L9(-31.0, 12.2));
+      g.bezierCurveTo(...L9(-38.0, 13.8), ...L9(-44.0, 14.5), ...L9(-48.5, 15.0));
+      g.closePath();
+    };
+
+    g.save();
+    traceLeftThumb();
+    g.fillStyle = lSkin;
+    g.fill();
+    g.clip();
+    const ltHigh = g.createRadialGradient(...L9(-15, .5), 1, ...L9(-15, .5), 18);
+    ltHigh.addColorStop(0, rgba(D('#fff2e4'), .22)); ltHigh.addColorStop(1, rgba(D('#fff2e4'), 0));
+    g.fillStyle = ltHigh; g.beginPath(); g.arc(...L9(-15, .5), 18, 0, 7); g.fill();
+
+    const ltShade = g.createRadialGradient(...L9(-16, 8.5), 2, ...L9(-16, 8.5), 20);
+    ltShade.addColorStop(0, rgba(D('#6b3725'), .26)); ltShade.addColorStop(1, rgba(D('#6b3725'), 0));
+    g.fillStyle = ltShade; g.beginPath(); g.arc(...L9(-16, 8.5), 20, 0, 7); g.fill();
+
+    const ltPad = g.createRadialGradient(...L9(-3, 2), .5, ...L9(-3, 2), 6);
+    ltPad.addColorStop(0, rgba(D('#cc6248'), .16)); ltPad.addColorStop(1, rgba(D('#cc6248'), 0));
+    g.fillStyle = ltPad; g.beginPath(); g.arc(...L9(-3, 2), 6, 0, 7); g.fill();
+
+    g.strokeStyle = rgba(D('#7d4630'), .20); g.lineWidth = .55;
+    g.beginPath();
+    g.moveTo(...L9(-12.5, -.2));
+    g.quadraticCurveTo(...L9(-12.2, 1.4), ...L9(-13.0, 2.8));
+    g.stroke();
+
+    // Естественный ноготь большого пальца в профиль-сверху.
+    const [lnx, lny] = L9(-3.6, -.2);
+    const lNailGrad = g.createLinearGradient(lnx - 2.4, lny, lnx + 2.4, lny);
+    lNailGrad.addColorStop(0, D('#dfa68c')); lNailGrad.addColorStop(1, D('#eec6b2'));
+    g.fillStyle = lNailGrad;
+    g.beginPath(); g.ellipse(lnx, lny, 2.5, 1.15, .08, 0, 7); g.fill();
+    g.strokeStyle = rgba(D('#8c563e'), .22); g.lineWidth = .48;
+    g.beginPath(); g.ellipse(lnx, lny, 2.5, 1.15, .08, Math.PI * .65, Math.PI * 1.35); g.stroke();
+    g.restore();
+
+    // Мягкая короткая складка у корня перепонки и тонкий контур только снизу и на кончике большого пальца.
+    g.strokeStyle = rgba(D('#6e3926'), .18); g.lineWidth = .65;
+    g.beginPath();
+    g.moveTo(...L9(-27.5, -.6));
+    g.quadraticCurveTo(...L9(-30.0, .6), ...L9(-32.5, 2.2));
+    g.stroke();
+
+    g.strokeStyle = rgba(D('#5a3220'), .13); g.lineWidth = .6;
+    g.beginPath();
+    g.moveTo(...L9(-15, -1.2));
+    g.quadraticCurveTo(...L9(-8.5, -1.6), ...L9(-3.5, -1.4));
+    g.quadraticCurveTo(...L9(-.8, -.6), ...L9(.4, 1.4));
+    g.bezierCurveTo(...L9(1.0, 3.8), ...L9(-2.0, 5.8), ...L9(-7.5, 6.2));
+    g.bezierCurveTo(...L9(-14.5, 6.8), ...L9(-21.5, 9.8), ...L9(-31.0, 12.2));
+    g.stroke();
+
+    // Левый рукав и свободный мягкий отворот поверх голого предплечья.
+    const lSleeve = g.createLinearGradient(310, 435, ckx - 55, cky + 12);
     lSleeve.addColorStop(0, D('#253b31')); lSleeve.addColorStop(.52, D('#495e47')); lSleeve.addColorStop(1, D(SLEEVE_LIGHT));
     g.save();
     g.beginPath();
-    g.moveTo(295, 455); g.lineTo(440, 455);
-    g.quadraticCurveTo(438, 418, lwx1, lwy1);
-    g.lineTo(lwx0, lwy0);
-    g.quadraticCurveTo(378, 386, 295, 434);
+    g.moveTo(285, 458);
+    g.lineTo(415, 458);
+    g.quadraticCurveTo(445, 422, ...L9(-80, 30));
+    g.quadraticCurveTo(...L9(-82, 18), ...L9(-90, 9));
+    g.quadraticCurveTo(378, 396, 285, 430);
     g.closePath();
     g.fillStyle = lSleeve;
     g.fill();
     g.clip();
-    const lFold = g.createLinearGradient(355, 396, 405, 444);
+    const lFold = g.createLinearGradient(340, 396, 405, 450);
     lFold.addColorStop(0, rgba(D('#dbe8d2'), .14));
-    lFold.addColorStop(.52, rgba(D('#495e47'), 0));
+    lFold.addColorStop(.50, rgba(D('#495e47'), 0));
     lFold.addColorStop(1, rgba(D('#141e19'), .38));
-    g.fillStyle = lFold; g.fillRect(290, 360, 260, 100);
-    g.strokeStyle = rgba(D('#1a2821'), .24); g.lineWidth = 3.2;
-    g.beginPath(); g.moveTo(348, 424); g.quadraticCurveTo(408, 412, lwx0 - 6, lwy0 + 8); g.stroke();
-    g.beginPath(); g.moveTo(378, 436); g.quadraticCurveTo(432, 425, lwx1 - 5, lwy1 - 5); g.stroke();
+    g.fillStyle = lFold; g.fillRect(280, 360, 260, 105);
+    g.strokeStyle = rgba(D('#1a2821'), .22); g.lineWidth = 3.2;
+    g.beginPath(); g.moveTo(340, 424); g.quadraticCurveTo(402, 412, ...L9(-88, 16)); g.stroke();
+    g.beginPath(); g.moveTo(368, 438); g.quadraticCurveTo(426, 426, ...L9(-83, 25)); g.stroke();
     g.restore();
 
-    const lSkin = g.createLinearGradient(ckx - 36, cky - 10, ckx + 6, cky + 22);
-    lSkin.addColorStop(0, D('#ebc3a2'));
-    lSkin.addColorStop(.48, D('#d49e79'));
-    lSkin.addColorStop(.82, D('#b27958'));
-    lSkin.addColorStop(1, D('#83523a'));
-    const lShadowSkin = g.createLinearGradient(ckx - 16, cky + 4, ckx + 4, cky + 22);
-    lShadowSkin.addColorStop(0, D('#ba7f5e'));
-    lShadowSkin.addColorStop(1, D('#784732'));
-
-    // Поджатые средний, безымянный и мизинец — мягкие округлые подушечки в тёплой тени под ладонью.
-    _drawFinger(g, ckx - 20, cky + 12.5, ckx - 14.5, cky + 17.2, ckx - 16.5, cky + 19.6, 6.2, 4.9, lShadowSkin, D, false, { blendBase: true, noCrease: true, noOutline: true });
-    _drawFinger(g, ckx - 16.5, cky + 9.5, ckx - 9.0, cky + 14.8, ckx - 11.8, cky + 17.8, 6.6, 5.2, lShadowSkin, D, false, { blendBase: true, noCrease: true, noOutline: true });
-    _drawFinger(g, ckx - 13.0, cky + 6.0, ckx - 4.2, cky + 11.2, ckx - 6.8, cky + 14.4, 7.0, 5.4, lShadowSkin, D, false, { blendBase: true, noCrease: true, noOutline: true });
-
-    // Скульптурная основа левой кисти с анатомическим объёмом и SSS.
-    const traceLeftHand = () => {
-      g.beginPath();
-      g.moveTo(lwx0 + 1.5, lwy0);
-      g.bezierCurveTo(ckx - 34, cky - 7.5, ckx - 24, cky - 10.5, ckx - 15, cky - 7.5);
-      g.quadraticCurveTo(ckx - 7.5, cky - 2.5, ckx - 9.5, cky + 8.5);
-      g.quadraticCurveTo(ckx - 19, cky + 20.5, lwx1 + 1, lwy1);
-      g.closePath();
-    };
-    g.save();
-    traceLeftHand();
-    g.fillStyle = lSkin;
-    g.fill();
-    g.clip();
-    const lDome = g.createRadialGradient(ckx - 26, cky + 2, 2, ckx - 24, cky + 4, 23);
-    lDome.addColorStop(0, rgba(D('#fff0e0'), .24));
-    lDome.addColorStop(1, rgba(D('#fff0e0'), 0));
-    g.fillStyle = lDome; g.beginPath(); g.arc(ckx - 24, cky + 4, 23, 0, 7); g.fill();
-    const lSss = g.createLinearGradient(ckx - 26, cky - 6, ckx - 10, cky + 20);
-    lSss.addColorStop(0, rgba(D('#c85a3e'), 0));
-    lSss.addColorStop(.65, rgba(D('#c85a3e'), .18));
-    lSss.addColorStop(1, rgba(D('#542c1c'), .32));
-    g.fillStyle = lSss; g.fillRect(ckx - 48, cky - 16, 54, 46);
-    // Сухожилие указательного пальца на тыле левой кисти.
-    g.strokeStyle = rgba(D('#ffeedc'), .13); g.lineWidth = 1.4;
-    g.beginPath(); g.moveTo(lwx0 + 5, lwy0 + 5); g.quadraticCurveTo(ckx - 27, cky - 1.5, ckx - 15, cky - 6.5); g.stroke();
-    g.restore();
-    g.strokeStyle = rgba(D('#5a3422'), .22); g.lineWidth = .75;
-    traceLeftHand(); g.stroke();
-
-    // Изогнутый указательный палец обхватывает верх головки ручки катушки.
-    _drawFinger(g, ckx - 17.5, cky - 6.8, ckx - 3.5, cky - 10.8, ckx + 5.0, cky - 3.0, 7.6, 5.4, lSkin, D, true, { blendBase: true, nailNarrow: true });
-
-    // Локальная контактная тень от кончика большого пальца на кнобе.
-    g.strokeStyle = 'rgba(18,12,10,.22)'; g.lineWidth = 4.6;
-    g.beginPath();
-    g.moveTo(ckx - 10.5, cky + 7.4);
-    g.quadraticCurveTo(ckx - 4.5, cky + 6.5, ckx + 1.5, cky + 3.8);
-    g.stroke();
-
-    // Плавная тенарная перепонка левого большого пальца (убирает резкий шов с ладонью).
-    g.fillStyle = lSkin;
-    g.beginPath();
-    g.moveTo(ckx - 32, cky + 12.5);
-    g.quadraticCurveTo(ckx - 24, cky + 4.0, ckx - 13, cky + 4.2);
-    g.lineTo(ckx - 16, cky + 13.5);
-    g.closePath();
-    g.fill();
-
-    // Большой палец прижимает кноб катушки спереди-снизу (щипковый хват).
-    _drawFinger(g, ckx - 25.5, cky + 8.4, ckx - 11.2, cky + 7.2, ckx + 1.2, cky + 3.0, 8.8, 6.2, lSkin, D, true, { blendBase: true, nailNarrow: true, nailSide: .12 });
-
-    // Изогнутая манжета на левом запястье.
-    _drawCuff(g, lwx0, lwy0, lwx1, lwy1, D, 1, -.2);
+    _drawRolledCuffBand(g, ...L9(-91, 9), ...L9(-82, 19), ...L9(-79, 31), 10.0, D);
   }
 
   const [bmx, bmy] = at(.90), [btx, bty] = tan(.90), bml = Math.hypot(btx, bty) || 1;
